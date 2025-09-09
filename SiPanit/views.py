@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.db import connections
 from django.db.utils import OperationalError
 from django.conf import settings
-from project.firebase import init_firebase
+from SiPanit.firebase import init_firebase
 
 def health(request):
     # --- DB check ---
