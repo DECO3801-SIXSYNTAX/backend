@@ -10,6 +10,6 @@ urlpatterns = [
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/accounts/', include('accounts.urls')),
+    path('api/admin/', include("adminapi.urls")),
     path('api/events/', include('events.urls')),
-    path('api/admin/', include('events.urls')),
 ]

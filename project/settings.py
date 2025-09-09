@@ -37,7 +37,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'SiPanit.urls'
+ROOT_URLCONF = 'project.urls'
 
 TEMPLATES = [{
     'BACKEND':'django.template.backends.django.DjangoTemplates',
@@ -51,16 +51,14 @@ TEMPLATES = [{
     ]},
 }]
 
-WSGI_APPLICATION = 'SiPanit.wsgi.application'
+WSGI_APPLICATION = 'project.wsgi.application'
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {"timeout": 30},  # wait up to 30s instead of failing fast
+    'default': {
+        'ENGINE':'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3'
     }
 }
-
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Australia/Brisbane'
