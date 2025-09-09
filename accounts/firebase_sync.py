@@ -1,44 +1,48 @@
-from firebase_admin import auth
-from SiPanit.firebase import init_firebase
+import firebase_admin
+from firebase_admin import auth, credentials, firestore
+from django.conf import settings
+import os
+
+if not firebase_admin._apps:
+    cred = credentials.Certificate(settings.FIREBASE_SERVICE_ACCOUNT)
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 def sync_user_to_firebase(user):
-    """
-    Sync a Django user to Firebase Auth.
-    - If user exists → update
-    - If not → create a new one
-    - Always set custom claims (role)
-    """
-    init_firebase()
+    # Basic Auth user data
+    data = {
+        "email": user.email,
+        "display_name": user.get_full_name() or user.username,
+        "phone_number": user.phone if user.phone else None,
+    }
 
     try:
-        # Check if the user already exists in Firebase
-        fb_user = auth.get_user_by_email(user.email)
-        # Update existing Firebase user
-        fb_user = auth.update_user(
-            fb_user.uid,
-            email=user.email,
-            display_name=user.get_full_name() or user.username,
-            disabled=not user.is_active,
-        )
-        print(f"[Firebase Sync] Updated user {user.email} in Firebase")
-    except auth.UserNotFoundError:
-        # Create new Firebase user
-        fb_user = auth.create_user(
-            uid=str(user.id),  # Use Django UUID as Firebase UID
-            email=user.email,
-            display_name=user.get_full_name() or user.username,
-            password="ChangeMe123!",  # Default password; should reset via Firebase
-        )
-        print(f"[Firebase Sync] Created user {user.email} in Firebase")
+        try:
+            fb_user = auth.get_user_by_email(user.email)
+            auth.update_user(fb_user.uid, **{k: v for k, v in data.items() if v})
+        except auth.UserNotFoundError:
+            fb_user = auth.create_user(
+                email=user.email,
+                password="123456",  # Default password, or random if you prefer
+                display_name=data["display_name"],
+                phone_number=data["phone_number"] if user.phone else None,
+            )
 
-    # ✅ Set custom claims for role
-    try:
-        auth.set_custom_user_claims(
-            fb_user.uid,
-            {"role": user.role}
-        )
-        print(f"[Firebase Sync] Set role={user.role} for {user.email}")
+        # Store extra profile info in Firestore
+        profile_data = {
+            "id": str(user.id),
+            "name": user.get_full_name() or user.username,
+            "email": user.email,
+            "role": user.role,
+            "company": user.company,
+            "phone": user.phone,
+            "experience": user.experience,
+            "specialty": user.specialty,
+        }
+        db.collection("users").document(fb_user.uid).set(profile_data, merge=True)
+
+        print(f"[Firebase Sync] Synced {user.email} → {fb_user.uid}")
+
     except Exception as e:
-        print(f"[Firebase Sync] Failed to set claims for {user.email}: {e}")
-
-    return fb_user
+        print(f"[Firebase Sync] ERROR syncing {user.email}: {e}")

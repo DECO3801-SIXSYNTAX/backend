@@ -36,7 +36,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'project.urls'
+ROOT_URLCONF = 'SiPanit.urls'
 
 TEMPLATES = [{
     'BACKEND':'django.template.backends.django.DjangoTemplates',
@@ -50,7 +50,7 @@ TEMPLATES = [{
     ]},
 }]
 
-WSGI_APPLICATION = 'project.wsgi.application'
+WSGI_APPLICATION = 'SiPanit.wsgi.application'
 
 DATABASES = {
     'default': {
