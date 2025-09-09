@@ -20,8 +20,7 @@ class AdminUsersViewSet(viewsets.ViewSet):
 
     def list(self, request):
         """
-        GET /api/admin/users/?q=...&role=PLANNER&status=active&limit=100
-        status maps to User.is_active (active/suspended)
+        GET /api/admin/users/
         """
         qs = User.objects.all().order_by("-last_login", "username")
 
@@ -47,13 +46,6 @@ class AdminUsersViewSet(viewsets.ViewSet):
         users = list(qs[:limit])
         return Response(UserSerializer(users, many=True).data)
 
-    def retrieve(self, request, pk=None):
-        try:
-            u = User.objects.get(pk=pk)
-        except User.DoesNotExist:
-            return Response({"detail": "Not found"}, status=404)
-        return Response(UserSerializer(u).data)
-
     def partial_update(self, request, pk=None):
         """
         PATCH body can include: { first_name, last_name, role, status }
@@ -69,17 +61,13 @@ class AdminUsersViewSet(viewsets.ViewSet):
         data = ser.validated_data
 
         changed = False
-        if "first_name" in data:
-            u.first_name = data["first_name"]; changed = True
-        if "last_name" in data:
-            u.last_name = data["last_name"]; changed = True
         if "role" in data and data["role"]:
             u.role = data["role"]; changed = True
         if "status" in data:
-            u.is_active = (data["status"] == "active"); changed = True
+            u.is_active = data["status"]; changed = True
 
         if changed:
-            u.save(update_fields=["first_name","last_name","role","is_active"])
+            u.save(update_fields=["role","is_active"])
 
         return Response(UserSerializer(u).data)
 
@@ -109,12 +97,6 @@ class AdminEventsViewSet(viewsets.ViewSet):
         events = list(qs[:limit])
         return Response(EventSerializer(events, many=True).data)
 
-    def retrieve(self, request, pk=None):
-        try:
-            ev = Event.objects.get(pk=pk)
-        except Event.DoesNotExist:
-            return Response({"detail": "Not found"}, status=404)
-        return Response(EventSerializer(ev).data)
 
     def partial_update(self, request, pk=None):
         """
@@ -129,11 +111,11 @@ class AdminEventsViewSet(viewsets.ViewSet):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
-        for fld in ("name", "date", "venue", "status"):
-            if fld in data:
-                setattr(ev, fld, data[fld])
+        if "status" in data:
+            ev.status = (data["status"]); changed = True
 
-        ev.save()
+        if changed:
+            ev.save(update_fields=["status"])
         return Response(EventSerializer(ev).data)
 
     def destroy(self, request, pk=None):
