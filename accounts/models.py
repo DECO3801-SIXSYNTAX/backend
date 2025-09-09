@@ -9,10 +9,10 @@ class User(AbstractUser):
         PLANNER = "PLANNER", "Planner"
         VENDOR = "VENDOR", "Vendor"
         GUEST = "GUEST", "Guest"
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.GUEST)
 
+ #added features
     phone = models.CharField(max_length=30, blank=True, null=True)
     company = models.CharField(max_length=255, blank=True, null=True)
     experience = models.CharField(max_length=255, blank=True, null=True)
