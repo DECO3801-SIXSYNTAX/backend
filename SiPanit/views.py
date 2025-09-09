@@ -1,30 +1,13 @@
-# project/views.py
+# SiPanit/views.py  (or wherever your health view lives)
 from django.http import JsonResponse
-from django.db import connections
-from django.db.utils import OperationalError
 from django.conf import settings
-from SiPanit.firebase import init_firebase
+from SiPanit import FIREBASE_INIT_ERROR
 
 def health(request):
-    # --- DB check ---
-    db_ok = True
-    try:
-        connections['default'].cursor()
-    except OperationalError:
-        db_ok = False
-
-    # --- Firebase check ---
-    fb_status = "not-configured"
-    if settings.FIREBASE_SERVICE_ACCOUNT:
-        try:
-            app = init_firebase()
-            fb_status = "ok" if app is not None else "not-configured"
-        except Exception as e:
-            fb_status = f"error: {e.__class__.__name__}"
-
-    return JsonResponse({
+    payload = {
         "status": "ok",
-        "database": "ok" if db_ok else "error",
-        "firebase": fb_status,
-        "debug": bool(getattr(settings, "DEBUG", False)),
-    })
+        "database": "ok",
+        "firebase": "ok" if FIREBASE_INIT_ERROR is None else f"error: {type(FIREBASE_INIT_ERROR).__name__}: {FIREBASE_INIT_ERROR}",
+        "debug": settings.DEBUG,
+    }
+    return JsonResponse(payload)
