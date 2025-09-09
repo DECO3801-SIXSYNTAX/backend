@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'accounts',
     'events',
+    'admin'
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
