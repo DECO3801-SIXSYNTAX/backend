@@ -1,9 +1,11 @@
-from django.conf import settings
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import AbstractUser
+from django.db import models
 
-@receiver(post_save, sender=settings.AUTH_USER_MODEL)
-def create_auth_token(sender, instance=None, created=False, **kwargs):
-    if created:
-        Token.objects.get_or_create(user=instance)
+class User(AbstractUser):
+    class Roles(models.TextChoices):
+        ADMIN = "admin", "Admin"
+        PLANNER = "planner", "Planner"
+        VENDOR = "vendor", "Vendor"
+        GUEST = "guest", "Guest"
+
+    role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.GUEST)

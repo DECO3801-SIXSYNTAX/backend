@@ -1,17 +1,23 @@
+# authentication/admin.py
 from django.contrib import admin
-from rest_framework.authtoken.models import Token
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from .models import User
 
-class TokenAdmin(admin.ModelAdmin):
-    list_display = ('key', 'user', 'get_roles', 'created')
-    search_fields = ('key', 'user__username', 'user__email')
-
-    def get_roles(self, obj):
-        return ", ".join(obj.user.groups.values_list("name", flat=True)) or "-"
-    get_roles.short_description = "Roles"
-
-try:
-    admin.site.unregister(Token)
-except admin.sites.NotRegistered:
-    pass
-
-admin.site.register(Token, TokenAdmin)
+@admin.register(User)
+class UserAdmin(DjangoUserAdmin):
+    list_display = ("id", "username", "email", "role", "is_active", "is_staff", "is_superuser")
+    list_filter = ("role", "is_active", "is_staff", "is_superuser")
+    search_fields = ("username", "email", "first_name", "last_name")
+    fieldsets = (
+        (None, {"fields": ("username", "password")}),
+        ("Personal info", {"fields": ("first_name", "last_name", "email")}),
+        ("Roles", {"fields": ("role",)}),
+        ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        ("Important dates", {"fields": ("last_login", "date_joined")}),
+    )
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("username", "email", "password1", "password2", "role", "is_staff", "is_superuser"),
+        }),
+    )
