@@ -7,3 +7,5 @@ urllib3
 djangorestframework
 djangorestframework-simplejwt
 django-cors-headers
+google-auth
+python-dotenv

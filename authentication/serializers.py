@@ -99,3 +99,11 @@ class UserListSerializer(serializers.ModelSerializer):
         model = User
         fields = ("id", "email", "name", "role")
         read_only_fields = fields
+
+class GoogleAuthSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
+    role = serializers.ChoiceField(
+        choices=["Admin", "Planner", "Vendor", "Guest"],
+        required=False
+    )
+
