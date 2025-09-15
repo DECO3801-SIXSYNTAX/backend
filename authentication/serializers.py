@@ -48,6 +48,54 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='first_name', required=False)
+
     class Meta:
         model = User
-        fields = ("id", "username", "email", "first_name", "last_name", "role")
+        fields = ("id", "email", "name", "role", "company", "phone", "experience", "specialty")
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'company': {'required': False, 'allow_blank': True},
+            'phone': {'required': False, 'allow_blank': True},
+            'experience': {'required': False, 'allow_blank': True},
+            'specialty': {'required': False, 'allow_blank': True},
+        }
+
+    def validate(self, attrs):
+        role = attrs.get('role')
+
+        # For planner role, validate that required planner fields might be provided
+        # But don't make them strictly required since frontend handles this
+        if role == 'planner':
+            # Optional validation - you can add specific rules here if needed
+            pass
+        elif role == 'vendor':
+            # Clear planner-specific fields for vendors
+            attrs.pop('company', None)
+            attrs.pop('phone', None)
+            attrs.pop('experience', None)
+            attrs.pop('specialty', None)
+
+        return attrs
+
+    def to_representation(self, instance):
+        # Convert Django User to frontend format
+        data = super().to_representation(instance)
+
+        # Don't expose planner fields for non-planner users
+        if instance.role != 'planner':
+            data.pop('company', None)
+            data.pop('phone', None)
+            data.pop('experience', None)
+            data.pop('specialty', None)
+
+        return data
+
+
+class UserListSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='first_name', read_only=True)
+
+    class Meta:
+        model = User
+        fields = ("id", "email", "name", "role")
+        read_only_fields = fields
