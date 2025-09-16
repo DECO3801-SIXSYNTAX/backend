@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'anymail',
     'authentication',
     'corsheaders',
 ]
@@ -146,3 +147,17 @@ SIMPLE_JWT = {
 }
 
 TIME_ZONE = "Australia/Brisbane"
+
+# Email configuration
+EMAIL_BACKEND = "SiPanit.email_backends.MultiEmailBackend"
+DEFAULT_FROM_EMAIL = "hevaquenta@gmail.com"
+
+# Load environment variables from .env file
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# Anymail configuration for SendGrid
+ANYMAIL = {
+    "SENDGRID_API_KEY": os.getenv("SENDGRID_API_KEY"),
+}
