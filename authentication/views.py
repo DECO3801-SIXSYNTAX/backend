@@ -1,4 +1,9 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.core.mail import send_mail
+from django.conf import settings
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
@@ -6,7 +11,13 @@ from rest_framework import status, viewsets
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from .serializers import RegisterSerializer, UserSerializer, UserListSerializer
+from .serializers import (
+    RegisterSerializer,
+    UserSerializer,
+    UserListSerializer,
+    PasswordResetSerializer,
+    PasswordResetConfirmSerializer
+)
 
 User = get_user_model()
 
@@ -116,3 +127,105 @@ class UserViewSet(viewsets.ModelViewSet):
         self.perform_update(serializer)
 
         return Response(UserSerializer(instance).data)
+
+
+# ===== PASSWORD RESET =====
+token_generator = PasswordResetTokenGenerator()
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset(request):
+    """
+    Request password reset via email.
+    Always returns success message for security (don't reveal if email exists).
+    """
+    serializer = PasswordResetSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    email = serializer.validated_data['email']
+
+    try:
+        user = User.objects.get(email=email)
+
+        # Generate token and uid
+        token = token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+        # Create reset link for frontend
+        reset_link = f"http://localhost:3000/reset-password/{uid}/{token}"
+
+        # Send email
+        subject = "Password Reset Request"
+        message = f"""
+Hello {user.first_name or user.username},
+
+You have requested a password reset for your account.
+
+Click the link below to reset your password:
+{reset_link}
+
+If you did not request this password reset, please ignore this email.
+
+Best regards,
+SiPanit Team
+        """
+
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@sipanit.com'),
+            recipient_list=[email],
+            fail_silently=True  # Don't fail if email service is down
+        )
+
+    except User.DoesNotExist:
+        # Don't reveal that user doesn't exist - security best practice
+        pass
+
+    # Always return the same message regardless of whether email exists
+    return Response({
+        "detail": "If this email is registered, you will receive a password reset link shortly."
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    """
+    Confirm password reset with uid, token and set new password.
+    """
+    serializer = PasswordResetConfirmSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    uid = serializer.validated_data['uid']
+    token = serializer.validated_data['token']
+    password = serializer.validated_data['password']
+
+    try:
+        # Decode user ID
+        try:
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({
+                "error": "Invalid reset link."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate token
+        if not token_generator.check_token(user, token):
+            return Response({
+                "error": "Invalid or expired reset link."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Set new password
+        user.set_password(password)
+        user.save()
+
+        return Response({
+            "detail": "Password has been reset successfully."
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({
+            "error": "Invalid reset link."
+        }, status=status.HTTP_400_BAD_REQUEST)
