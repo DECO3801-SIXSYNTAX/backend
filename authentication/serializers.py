@@ -121,3 +121,11 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         # Validate password strength
         password_validation.validate_password(attrs["password"])
         return attrs
+
+
+class GoogleAuthSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
+    role = serializers.ChoiceField(
+        choices=["Admin", "Planner", "Vendor", "Guest"],
+        required=False
+    )

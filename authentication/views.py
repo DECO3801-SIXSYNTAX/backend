@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.contrib.auth.models import Group
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -7,16 +8,22 @@ from django.utils.encoding import force_bytes, force_str
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework import status, viewsets
+from rest_framework import status, viewsets, permissions
+from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
     UserListSerializer,
     PasswordResetSerializer,
-    PasswordResetConfirmSerializer
+    PasswordResetConfirmSerializer,
+    GoogleAuthSerializer
 )
 
 User = get_user_model()
@@ -229,3 +236,62 @@ def password_reset_confirm(request):
         return Response({
             "error": "Invalid reset link."
         }, status=status.HTTP_400_BAD_REQUEST)
+
+class GoogleLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        # 1) Validate request body
+        serializer = GoogleAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        id_token_str = serializer.validated_data["id_token"]
+        role_name = serializer.validated_data.get("role", "Guest")
+
+        # 2) Verify Google ID token (signature, issuer, and audience)
+        try:
+            idinfo = google_id_token.verify_oauth2_token(
+                id_token_str,
+                google_requests.Request(),
+                settings.GOOGLE_CLIENT_ID,  # will fail automatically if audience does not match
+            )
+        except ValueError:
+            return Response(
+                {"detail": "Invalid Google ID token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 3) Ensure the email is verified
+        if not idinfo.get("email_verified", False):
+            return Response(
+                {"detail": "Google email is not verified."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 4) Get or create user
+        email = idinfo["email"]
+        full_name = idinfo.get("name", "") or ""
+        first = full_name.split(" ")[0] if full_name else ""
+        last = " ".join(full_name.split(" ")[1:]) if " " in full_name else ""
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={"username": email, "first_name": first, "last_name": last},
+        )
+
+        # 5) Assign role if the user is new
+        if created and role_name:
+            group, _ = Group.objects.get_or_create(name=role_name)
+            user.groups.add(group)
+
+        # 6) Issue JWT tokens
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": UserSerializer(user).data,
+                "is_new_user": created,
+                "login_provider": "google",
+            },
+            status=status.HTTP_200_OK,
+        )
