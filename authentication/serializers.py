@@ -99,3 +99,25 @@ class UserListSerializer(serializers.ModelSerializer):
         model = User
         fields = ("id", "email", "name", "role")
         read_only_fields = fields
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, label="Confirm Password")
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password2"]:
+            raise serializers.ValidationError({"password": "Passwords do not match."})
+
+        # Validate password strength
+        password_validation.validate_password(attrs["password"])
+        return attrs
