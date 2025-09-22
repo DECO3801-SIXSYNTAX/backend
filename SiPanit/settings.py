@@ -52,6 +52,7 @@ TEMPLATES = [{
 }]
 
 WSGI_APPLICATION = 'SiPanit.wsgi.application'
+ASGI_APPLICATION = 'SiPanit.asgi.application'
 
 DATABASES = {
     "default": {
