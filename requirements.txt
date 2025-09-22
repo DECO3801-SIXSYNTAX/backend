@@ -10,3 +10,4 @@ django-cors-headers
 django-anymail[sendgrid]
 google-auth
 python-dotenv
+firebase-admin
