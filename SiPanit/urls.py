@@ -40,7 +40,7 @@ urlpatterns = [
 
     # App routes
     path("api/auth/", include("authentication.urls")),
-    path("api/accounts/", include("accounts.urls")),
+    #path("api/accounts/", include("accounts.urls")),
     path("api/events/", include("events.urls")),
 
     # DRF router (users, etc.)
