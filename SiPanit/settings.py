@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'events',
     'anymail',
     'authentication.apps.AuthenticationConfig',
+    'event',
 ]
 
 MIDDLEWARE = [
