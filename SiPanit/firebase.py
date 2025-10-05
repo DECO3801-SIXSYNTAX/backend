@@ -1,23 +1,47 @@
-# project/firebase.py
-import firebase_admin
-from firebase_admin import credentials
-from django.conf import settings
+# SiPanit/firebase.py
+import os
+from pathlib import Path
 
-_firebase_app = None
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+_app = None
+_db = None
 
 def init_firebase():
     """
-    Initialize firebase-admin once using the service account path from settings.
-    Safe to call multiple times; returns the app instance or raises on bad creds.
+    Initialize firebase-admin once using FIREBASE_CREDENTIALS from .env.
+    Safe dipanggil berkali-kali.
     """
-    global _firebase_app
-    if _firebase_app:
-        return _firebase_app
+    global _app
+    if _app:
+        return _app
 
-    sa_path = getattr(settings, "FIREBASE_SERVICE_ACCOUNT", "")
-    if not sa_path:
-        return None  # not configured
+    cred_path = os.getenv("FIREBASE_CREDENTIALS")
+    if not cred_path:
+        raise RuntimeError("FIREBASE_CREDENTIALS not set in .env")
 
-    cred = credentials.Certificate(sa_path)
-    _firebase_app = firebase_admin.initialize_app(cred)
-    return _firebase_app
+    base_dir = Path(__file__).resolve().parent.parent
+    cred_file = (base_dir / cred_path) if not os.path.isabs(cred_path) else Path(cred_path)
+
+    if not cred_file.exists():
+        raise FileNotFoundError(f"Service account file not found: {cred_file}")
+
+    if not firebase_admin._apps:  # hanya init sekali
+        cred = credentials.Certificate(str(cred_file))
+        _app = firebase_admin.initialize_app(cred, {
+            "projectId": os.getenv("FIREBASE_PROJECT_ID")
+        })
+    else:
+        _app = firebase_admin.get_app()
+
+    return _app
+
+
+def get_db():
+    """Return Firestore client (auto init kalau belum)."""
+    global _db
+    if _db is None:
+        init_firebase()
+        _db = firestore.client()
+    return _db
