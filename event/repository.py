@@ -1,4 +1,4 @@
-from __future__ import annotations
+# event/repository.py
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from SiPanit.firebase import get_db
@@ -32,7 +32,7 @@ def get_event(event_id: str) -> Optional[Dict[str, Any]]:
 def upsert_event(data: Dict[str, Any]) -> str:
     db = get_db()
     event_id = data.get("id") or db.collection(COLL).document().id
-    exists = get_db().collection(COLL).document(event_id).get().exists
+    exists = db.collection(COLL).document(event_id).get().exists
     payload = _with_audit_on_update(data) if exists else _with_audit_on_create(data)
     db.collection(COLL).document(event_id).set(payload, merge=True)
     return event_id
