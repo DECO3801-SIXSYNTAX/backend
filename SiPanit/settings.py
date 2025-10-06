@@ -24,13 +24,11 @@ INSTALLED_APPS = [
     'corsheaders',
     #'accounts',
     'events',
-<<<<<<< HEAD
     'adminapi',
-=======
     'anymail',
-    'authentication.apps.AuthenticationConfig',
+    'authentication',
     'event',
->>>>>>> 5615f8fb7c02bcaf3c1b99952ee7b46fa2d158c4
+    
 ]
 
 MIDDLEWARE = [

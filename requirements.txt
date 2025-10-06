@@ -1,13 +1,27 @@
+# Core Framework
 django
-gunicorn
-whitenoise
-psycopg2-binary
-requests
-urllib3
 djangorestframework
 djangorestframework-simplejwt
 django-cors-headers
+
+# Deployment & Server
+gunicorn
+whitenoise
+psycopg2-binary
+
+# Email & Auth
 django-anymail[sendgrid]
 google-auth
-python-dotenv
+
+# Firebase & Google Cloud
 firebase-admin
+google-cloud-firestore
+google-cloud-storage
+
+# Utilities
+python-dotenv
+requests
+urllib3
+
+# API Documentation
+drf-spectacular

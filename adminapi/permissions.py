@@ -8,4 +8,4 @@ class IsAdminOnly(BasePermission):
     """
     def has_permission(self, request, view):
         u = getattr(request, "user", None)
-        return bool(u and getattr(u, "is_authenticated", False) and (getattr(u, "role", "") == "ADMIN"))
+        return bool(u and getattr(u, "is_authenticated", False) and (getattr(u, "role", "") == "admin"))

@@ -4,8 +4,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.models import User
-from accounts.serializers import UserSerializer
+from authentication.models import User
+from authentication.serializers import UserSerializer
 
 from events.models import Event
 from events.serializers import EventSerializer

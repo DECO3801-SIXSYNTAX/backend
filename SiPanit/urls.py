@@ -25,16 +25,6 @@ def api_root(request):
     })
 
 urlpatterns = [
-<<<<<<< HEAD
-    path("", health),  # optional root -> shows the health JSON
-    path('admin/', admin.site.urls),
-    path('api/health/', health),
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/accounts/', include('accounts.urls')),
-    path('api/admin/', include("adminapi.urls")),
-    path('api/events/', include('events.urls')),
-=======
     # Root landing
     path("", api_root, name="api-root"),
 
@@ -57,5 +47,5 @@ urlpatterns = [
     path("api/", include(router.urls)),
 
     path("api/event/", include("event.urls")),
->>>>>>> 5615f8fb7c02bcaf3c1b99952ee7b46fa2d158c4
+    path("api/admin/", include("adminapi.urls")),
 ]
