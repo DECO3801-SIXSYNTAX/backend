@@ -125,3 +125,21 @@ ANYMAIL = {
 
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+# settings.py
+MIDDLEWARE.insert(0, 'SiPanit.middleware.security_audit.SecurityAuditMiddleware')
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "security_audit": {"handlers": ["console"], "level": "INFO"},
+    },
+}
+
+# settings.py
+REST_FRAMEWORK.update({
+    'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.UserRateThrottle'],
+    'DEFAULT_THROTTLE_RATES': {'user': '10/minute'},
+})

@@ -21,6 +21,7 @@ from .serializers import (
     RegisterSerializer,
     UserSerializer,
     UserListSerializer,
+    PublicUserSerializer,
     PasswordResetSerializer,
     PasswordResetConfirmSerializer,
     GoogleAuthSerializer
@@ -85,7 +86,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return UserListSerializer
+            return PublicUserSerializer
         return UserSerializer
 
     def create(self, request, *args, **kwargs):
@@ -295,3 +296,5 @@ class GoogleLoginView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+    
+

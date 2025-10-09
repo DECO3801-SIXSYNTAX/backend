@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from authentication.permissions import IsPlanner
+
 from .serializers import (
     EventSerializer,
     LayoutSaveSer,
@@ -287,7 +288,7 @@ class LayoutReadView(APIView):
     GET /api/event/layouts/<event_id>/
     - Selalu balikan format FE floorplan agar FE bisa langsung render.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPlanner]
 
     def get(self, request, event_id: str):
         allowed, _ = _can_access_event_id(request.user, event_id)

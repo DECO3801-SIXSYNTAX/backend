@@ -129,3 +129,8 @@ class GoogleAuthSerializer(serializers.Serializer):
         choices=["Admin", "Planner", "Vendor", "Guest"],
         required=False
     )
+    
+class PublicUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("id", "first_name", "last_name")  # no email/role by default
