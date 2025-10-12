@@ -14,6 +14,9 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from rest_framework.decorators import throttle_classes
+from .throttles import PasswordResetRateThrottle
+
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 
@@ -24,7 +27,7 @@ from .serializers import (
     PublicUserSerializer,
     PasswordResetSerializer,
     PasswordResetConfirmSerializer,
-    GoogleAuthSerializer
+    GoogleAuthSerializer,
 )
 
 User = get_user_model()
@@ -142,6 +145,7 @@ token_generator = PasswordResetTokenGenerator()
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([PasswordResetRateThrottle])
 def password_reset(request):
     """
     Request password reset via email.

@@ -5,16 +5,15 @@ logger = logging.getLogger("security_audit")
 SENSITIVE_PREFIXES = ("/api/auth/", "/api/event/layouts")
 
 class SecurityAuditMiddleware:
-    """
-    Logs minimal, privacy-preserving traces for sensitive endpoints:
-    - Tujuan: accountability & post-incident review (tanpa menyimpan PII berlebih).
-    """
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         path = request.path
         if path.startswith(SENSITIVE_PREFIXES):
-            uid = getattr(request.user, "id", None)
-            logger.info("audit path=%s method=%s user=%s", path, request.method, uid)
+            # user bisa belum ada jika middleware ini dieksekusi sebelum AuthenticationMiddleware
+            user = getattr(request, "user", None)
+            uid = getattr(user, "id", None) if user is not None else None
+            method = getattr(request, "method", None)
+            logger.info("audit path=%s method=%s user=%s", path, method, uid)
         return self.get_response(request)

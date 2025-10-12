@@ -39,6 +39,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'SiPanit.middleware.security_audit.SecurityAuditMiddleware',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True 
@@ -156,3 +157,8 @@ CSRF_COOKIE_SECURE      = not DEBUG
 SECURE_HSTS_SECONDS     = 0 if DEBUG else 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD     = not DEBUG
+
+REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"].append(
+    "authentication.throttles.PasswordResetRateThrottle"
+)
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["password_reset"] = "3/minute"
