@@ -25,3 +25,8 @@ urllib3
 
 # API Documentation
 drf-spectacular
+
+cryptography
+qrcode[pil] 
+Pillow
+
