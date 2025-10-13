@@ -1,20 +1,26 @@
-# event/views.py
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.utils.timezone import now
 from rest_framework import viewsets, status, permissions
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from authentication.permissions import IsPlanner
 from .serializers import (
     EventSerializer,
     LayoutSaveSer,
     FEFloorPlanSer,
+    # pastikan kamu punya serializer ini: email (required), name/company/message (optional)
+    InviteVendorSer,
 )
 from . import repository as erepo
 from .layout_repository import get_layout as lr_get_layout, save_layout as lr_save_layout
+
+User = get_user_model()
 
 
 # =========================
@@ -24,26 +30,26 @@ from .layout_repository import get_layout as lr_get_layout, save_layout as lr_sa
 def _same_id(a, b) -> bool:
     return str(a).strip() == str(b).strip()
 
+
 def _same_company(a, b) -> bool:
     return (a or "").strip().upper() == (b or "").strip().upper()
 
+
 def _can_access_event(user, event_dict) -> bool:
     """
-    Superuser bebas. Selain itu: harus satu company DAN
-    owner/collaborator dari event tersebut.
+    Superuser = boleh.
+    Owner atau collaborator event = boleh.
     """
     if not event_dict:
         return False
     if getattr(user, "is_superuser", False):
         return True
 
-    if not _same_company(getattr(user, "company", None), event_dict.get("company")):
-        return False
-
     uid = str(getattr(user, "pk", getattr(user, "id", "")))
-    owner_ok = _same_id(event_dict.get("createdBy"), uid)
+    owner_ok = str(event_dict.get("createdBy")) == uid
     collabs = set(map(str, (event_dict.get("collaborators") or [])))
     return owner_ok or (uid in collabs)
+
 
 def _can_access_event_id(user, event_id: str):
     ev = erepo.get_event(event_id)
@@ -62,13 +68,19 @@ def _layout_to_fe(event_id: str, layout: dict | None) -> dict:
     for e in els:
         geom = e.get("geom", {}) or {}
         meta = geom.get("meta", {}) or {}
+        # jaga-jaga kalau width/height bukan angka
+        width_val = geom.get("width", 80)
+        height_val = geom.get("height", 60)
+        width_val = width_val if isinstance(width_val, (int, float)) else 80
+        height_val = height_val if isinstance(height_val, (int, float)) else 60
+
         item = {
             "id": e.get("id"),
             "type": e.get("type"),
             "x": geom.get("x", 0),
             "y": geom.get("y", 0),
-            "width": geom.get("width", 80),
-            "height": geom.get("height", 60),
+            "width": width_val,
+            "height": height_val,
             "rotation": geom.get("rotation", 0),
             "capacity": e.get("capacity", 0),
             "name": e.get("name"),
@@ -80,8 +92,8 @@ def _layout_to_fe(event_id: str, layout: dict | None) -> dict:
                 "label": meta.get("label", e.get("type")),
                 "color": geom.get("color", "#8B5CF6"),
                 "textColor": meta.get("textColor", "#FFFFFF"),
-                "defaultWidth": meta.get("defaultWidth", int(geom.get("width", 80))),
-                "defaultHeight": meta.get("defaultHeight", int(geom.get("height", 60))),
+                "defaultWidth": int(width_val),
+                "defaultHeight": int(height_val),
                 "defaultRadius": meta.get("defaultRadius"),
                 "description": meta.get("description", "")
             }
@@ -103,6 +115,7 @@ def _layout_to_fe(event_id: str, layout: dict | None) -> dict:
         "createdAt": (layout or {}).get("createdAt", ""),
         "updatedAt": (layout or {}).get("updatedAt", ""),
     }
+
 
 def _fe_to_layout_payload(fe: dict, current_version: int) -> dict:
     elements = []
@@ -156,11 +169,19 @@ def _fe_to_layout_payload(fe: dict, current_version: int) -> dict:
 
 
 # =========================
-# Event CRUD (company-aware)
+# Event CRUD (company-aware) + invite/remove vendor
 # =========================
 
 class EventViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, IsPlanner]
+
+    # --- helper: hanya owner atau superuser yang boleh edit collaborators
+    def _require_owner(self, request, ev: dict):
+        uid = str(request.user.id)
+        if getattr(request.user, "is_superuser", False):
+            return
+        if str(ev.get("createdBy")) != uid:
+            raise PermissionDenied("Only event owner can modify collaborators.")
 
     def list(self, request):
         mine = request.query_params.get("mine")
@@ -199,7 +220,6 @@ class EventViewSet(viewsets.ViewSet):
     def create(self, request):
         data = dict(request.data)
         data["createdBy"] = str(request.user.id)
-        # tenancy: inject company dari user yang login
         data["company"] = (getattr(request.user, "company", "") or "").strip().upper()
 
         ser = EventSerializer(data=data)
@@ -217,8 +237,7 @@ class EventViewSet(viewsets.ViewSet):
         data = dict(request.data)
         data["id"] = pk
         data["createdBy"] = current.get("createdBy")
-        # jangan izinkan pindah company lewat update
-        data["company"] = current.get("company")
+        data["company"] = current.get("company")  # jangan pindah company lewat update
 
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
@@ -233,6 +252,111 @@ class EventViewSet(viewsets.ViewSet):
             return Response({"detail": "Forbidden"}, status=403)
         erepo.delete_event(pk)
         return Response(status=204)
+
+    # -------- Collaborators --------
+
+    @action(detail=True, methods=["post"], url_path="invite-collaborator")
+    def invite_collaborator(self, request, pk=None):
+        """
+        Body: { "user_id": "<uuid>" }  ATAU  { "email": "vendor@x.com" }
+        Target harus user yang ada dengan role='vendor'.
+        """
+        ev = erepo.get_event(pk)
+        if not ev:
+            return Response({"detail": "Not found"}, status=404)
+        self._require_owner(request, ev)
+
+        user_id = (request.data.get("user_id") or "").strip()
+        email = (request.data.get("email") or "").strip().lower()
+
+        target = None
+        if user_id:
+            try:
+                target = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                raise ValidationError({"user_id": "User not found."})
+        elif email:
+            try:
+                target = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise ValidationError({"email": "User not found."})
+        else:
+            raise ValidationError("Provide 'user_id' or 'email'.")
+
+        if getattr(target, "role", "") != "vendor":
+            raise ValidationError("Target user must have role 'vendor'.")
+
+        erepo.add_collaborator(pk, str(target.id))
+        # return state terbaru
+        latest = erepo.get_event(pk) or {}
+        return Response({"detail": "Collaborator invited", "collaborators": latest.get("collaborators", [])})
+
+    @action(detail=True, methods=["post"], url_path="remove-collaborator")
+    def remove_collaborator(self, request, pk=None):
+        """
+        Body: { "user_id": "<uuid>" }  ATAU  { "email": "vendor@x.com" }
+        """
+        ev = erepo.get_event(pk)
+        if not ev:
+            return Response({"detail": "Not found"}, status=404)
+        self._require_owner(request, ev)
+
+        user_id = (request.data.get("user_id") or "").strip()
+        email = (request.data.get("email") or "").strip().lower()
+
+        tid = None
+        if user_id:
+            tid = user_id
+        elif email:
+            try:
+                tid = str(User.objects.only("id").get(email=email).id)
+            except User.DoesNotExist:
+                return Response({"detail": "No such user; nothing to remove."})
+        else:
+            raise ValidationError("Provide 'user_id' or 'email'.")
+
+        erepo.remove_collaborator(pk, str(tid))
+        latest = erepo.get_event(pk) or {}
+        return Response({"detail": "Collaborator removed", "collaborators": latest.get("collaborators", [])})
+
+    @action(detail=True, methods=["post"], url_path="invite-vendor")
+    def invite_vendor(self, request, pk=None):
+        """
+        Membuat (jika belum ada) user role=vendor lalu menambahkannya ke collaborators.
+        Body: { "email": "<required>", "name": "optional", "company": "optional", "message": "optional" }
+        """
+        ev = erepo.get_event(pk)
+        if not ev:
+            return Response({"detail": "Not found"}, status=404)
+        self._require_owner(request, ev)
+
+        ser = InviteVendorSer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        email = ser.validated_data["email"].strip().lower()
+        name = ser.validated_data.get("name") or ""
+        vend_company = (ser.validated_data.get("company") or "").strip() or None
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "username": email,
+                "role": "vendor",
+                "first_name": name.split(" ")[0] if name else "",
+                "last_name": " ".join(name.split(" ")[1:]) if " " in name else "",
+                "company": vend_company,
+                "is_active": True,
+            },
+        )
+        if not created and user.role != "vendor":
+            return Response({"detail": "Target user bukan vendor.", "role": user.role}, status=400)
+
+        erepo.add_collaborator(pk, str(user.id))
+        latest = erepo.get_event(pk) or {}
+        return Response(
+            {"detail": "Vendor invited", "user_id": str(user.id), "created_user": created,
+             "collaborators": latest.get("collaborators", [])},
+            status=status.HTTP_200_OK,
+        )
 
 
 # =========================================
@@ -266,7 +390,6 @@ class LayoutSaveView(APIView):
             payload = _fe_to_layout_payload(fe, int(current.get("version", 1)))
             result = lr_save_layout(payload)
             if result.get("conflict"):
-                # retry once dengan versi terbaru
                 payload["version"] = int(result["current_version"])
                 result = lr_save_layout(payload)
 
@@ -345,24 +468,27 @@ class LayoutMetaView(APIView):
             "updatedAt": layout.get("updatedAt"),
             "has_elements": bool(layout.get("elements")),
         }, status=200)
-    
-# event/views.py (tambahkan)
+
+
+# =========================
+# Event stats
+# =========================
+
 class EventStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsPlanner]
 
     def get(self, request, event_id: str):
-        # pastikan akses
         allowed, ev = _can_access_event_id(request.user, event_id)
         if not allowed or not ev:
             return Response({"detail": "Forbidden"}, status=403)
 
-        # ---- ambil layout untuk hitung kursi terpakai ----
+        # Layout → hitung kursi terpakai
         layout = lr_get_layout(event_id) or {"elements": []}
         assigned = 0
         for el in layout.get("elements", []):
             assigned += len(el.get("assigned_guest_ids", []) or [])
 
-        # ---- contoh ambil guests dari Firestore (jika kamu simpan di events/{id}/guests) ----
+        # Guests (jika kamu simpan di events/{id}/guests)
         from SiPanit.firebase import get_db
         db = get_db()
         guests = list(db.collection("events").document(event_id).collection("guests").stream())
