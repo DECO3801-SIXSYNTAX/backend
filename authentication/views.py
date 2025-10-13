@@ -1,4 +1,3 @@
-# authentication/views.py
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.models import Group
@@ -10,10 +9,13 @@ from django.utils.encoding import force_bytes, force_str
 from django.db.models import Q
 
 from rest_framework import status, viewsets, permissions
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.decorators import (
+    api_view, permission_classes, authentication_classes, action
+)
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -33,7 +35,10 @@ from .serializers import (
 
 User = get_user_model()
 
-# ===== REGISTER =====
+# ======================
+# Register / Login / Logout
+# ======================
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
@@ -42,7 +47,7 @@ def register(request):
     user = ser.save()
     return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
-# ===== LOGIN (JWT) =====
+
 class _LoginSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -53,79 +58,115 @@ class _LoginSerializer(TokenObtainPairSerializer):
         return t
 
     def validate(self, attrs):
+        # DRF SimpleJWT sudah otomatis menolak user.is_active=False (no active account)
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data
         return data
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login(request):
     ser = _LoginSerializer(data=request.data, context={"request": request})
     ser.is_valid(raise_exception=True)
-    # returns { refresh, access, user }
     return Response(ser.validated_data, status=200)
 
-# ===== LOGOUT =====
+
 @api_view(["POST"])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def logout(request):
-    # JWT is stateless → client should delete tokens itself.
     return Response({"detail": "Logged out"}, status=200)
 
-# ===== USER CRUD (company-scoped list for admin) =====
+
+# ======================
+# Users (company-scoped & status actions)
+# ======================
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     authentication_classes = [JWTAuthentication]
 
     def get_permissions(self):
-        # Admin can list users in their own company
         if self.action == "list":
             return [IsAuthenticated(), IsAdmin()]
-        # Anyone authenticated can hit retrieve; queryset will scope it
         if self.action == "retrieve":
             return [IsAuthenticated()]
-        # Keep create/update/delete authenticated (tune to your policy)
+        # create/update/delete → tetap require login (atur sesuai kebijakan)
         return [IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.action == "list":
-            return UserListSerializer   # minimal fields for listing
+            return UserListSerializer
         return UserSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
 
         if self.action == "list":
-            # Only users from the same company as the admin
             admin_company = (getattr(self.request.user, "company", "") or "").strip().upper()
 
             roles_param = self.request.query_params.get("role")
             roles = [r.strip() for r in roles_param.split(",")] if roles_param else ["admin", "planner"]
 
-            qs = qs.filter(company__iexact=admin_company, role__in=roles).order_by(
-                "first_name", "last_name", "email"
-            )
+            qs = qs.filter(company__iexact=admin_company, role__in=roles)
 
+            # filter status (?status=active|suspended)
+            status_param = (self.request.query_params.get("status") or "").lower()
+            if status_param in ("active", "suspended"):
+                qs = qs.filter(is_active=(status_param == "active"))
+
+            # search (?q=...)
             q = self.request.query_params.get("q")
             if q:
                 qs = qs.filter(
-                    Q(first_name__icontains=q)
-                    | Q(last_name__icontains=q)
-                    | Q(email__icontains=q)
-                    | Q(username__icontains=q)
+                    Q(first_name__icontains=q) |
+                    Q(last_name__icontains=q) |
+                    Q(email__icontains=q) |
+                    Q(username__icontains=q)
                 )
 
+            return qs.order_by("first_name", "last_name", "email")
+
         if self.action == "retrieve":
-            # Non-admin can only retrieve themselves
             if getattr(self.request.user, "role", "") != "admin":
                 return qs.filter(id=self.request.user.id)
-            # Admin can retrieve users in their company only
             admin_company = (getattr(self.request.user, "company", "") or "").strip().upper()
             return qs.filter(company__iexact=admin_company)
 
         return qs
 
+    # ---------- helpers ----------
+    def _enforce_same_company(self, target_user):
+        me = (self.request.user.company or "").strip().upper()
+        other = (target_user.company or "").strip().upper()
+        if me != other:
+            raise PermissionDenied("Cross-company operation is forbidden.")
+
+    # ---------- actions ----------
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsAdmin])
+    def suspend(self, request, pk=None):
+        """
+        POST /api/users/{id}/suspend/
+        """
+        user = self.get_object()
+        self._enforce_same_company(user)
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        return Response({"detail": "User suspended", "status": "suspended"})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsAdmin])
+    def activate(self, request, pk=None):
+        """
+        POST /api/users/{id}/activate/
+        """
+        user = self.get_object()
+        self._enforce_same_company(user)
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        return Response({"detail": "User activated", "status": "active"})
+
+    # (opsional) create & update kamu tetap pakai yang sederhana
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -133,23 +174,23 @@ class UserViewSet(viewsets.ModelViewSet):
         password = request.data.get("password")
         user_data = serializer.validated_data
 
-        # Map 'name' → 'first_name' if FE sends it as name
-        if "first_name" in user_data:
-            user_data["first_name"] = user_data.pop("first_name")
-
-        # Auto username from email if missing
+        # auto-username dari email kalau kosong
         if "email" in user_data and "username" not in user_data:
             email = user_data["email"]
             username = email
-            counter = 1
+            i = 1
             while User.objects.filter(username=username).exists():
-                username = f"{email.split('@')[0]}_{counter}"
-                counter += 1
+                prefix = email.split("@")[0]
+                username = f"{prefix}_{i}"
+                i += 1
             user_data["username"] = username
 
         user = User(**user_data)
         if password:
             user.set_password(password)
+        # default aktif
+        if user.is_active is None:
+            user.is_active = True
         user.save()
 
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
@@ -167,15 +208,16 @@ class UserViewSet(viewsets.ModelViewSet):
         self.perform_update(serializer)
         return Response(UserSerializer(instance).data)
 
-# ===== PASSWORD RESET (uniform response) =====
+
+# ======================
+# Password reset (uniform response)
+# ======================
+
 token_generator = PasswordResetTokenGenerator()
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def password_reset(request):
-    """
-    Always returns the same message (enumeration-safe).
-    """
     serializer = PasswordResetSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -209,13 +251,13 @@ SiPanit Team
             fail_silently=True,
         )
     except User.DoesNotExist:
-        # Do not reveal existence
         pass
 
     return Response(
         {"detail": "If this email is registered, you will receive a password reset link shortly."},
         status=status.HTTP_200_OK,
     )
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -239,12 +281,16 @@ def password_reset_confirm(request):
 
         user.set_password(password)
         user.save()
-
         return Response({"detail": "Password has been reset successfully."}, status=status.HTTP_200_OK)
+
     except Exception:
         return Response({"error": "Invalid reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
-# ===== GOOGLE OAUTH =====
+
+# ======================
+# Google OAuth
+# ======================
+
 class GoogleLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -275,6 +321,10 @@ class GoogleLoginView(APIView):
             email=email,
             defaults={"username": email, "first_name": first, "last_name": last},
         )
+
+        # BLOCK: suspended users cannot log in via Google
+        if not user.is_active:
+            return Response({"detail": "Account is suspended."}, status=status.HTTP_403_FORBIDDEN)
 
         if created and role_name:
             group, _ = Group.objects.get_or_create(name=role_name)
