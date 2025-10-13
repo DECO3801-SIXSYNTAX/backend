@@ -1,6 +1,5 @@
+# authentication/permissions.py
 from rest_framework.permissions import BasePermission
-
-
 
 class RoleRequired(BasePermission):
     needed = []
@@ -9,6 +8,4 @@ class RoleRequired(BasePermission):
         u = request.user
         return bool(u and u.is_authenticated and u.role in self.needed)
 
-class IsPlannerOrAdmin(RoleRequired):   needed = ["planner", "admin"]
-
-class IsAdminOnly(RoleRequired):   needed = ["admin"]
+class IsPlannerorAdmin(RoleRequired):   needed = ["planner", "admin"]

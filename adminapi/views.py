@@ -3,6 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from authentication.models import User
 from authentication.serializers import UserSerializer
@@ -10,9 +11,11 @@ from authentication.serializers import UserSerializer
 from events.models import Event
 from events.serializers import EventSerializer
 
-from .permissions import IsAdminOnly
-from .serializers import AdminUserUpdateSerializer, AdminEventUpdateSerializer
+from .permissions import IsAdminOnly, IsPlannerOrAdmin
+from .serializers import AdminUserUpdateSerializer, AdminEventUpdateSerializer, ActivitySerializer
 from .models import AdminSettings
+
+from SiPanit.firebase import get_db
 
 
 class AdminUsersViewSet(viewsets.ViewSet):
@@ -125,3 +128,29 @@ class AdminEventsViewSet(viewsets.ViewSet):
             return Response({"detail": "Not found"}, status=404)
         ev.delete()
         return Response(status=204)
+
+class RecentActivityView(APIView):
+    permission_classes = [IsPlannerOrAdmin]   # only admin/planner
+
+    def get(self, request):
+        event_id = request.query_params.get("eventId")
+        limit = int(request.query_params.get("limit", 30))
+
+        db = get_db()
+        ref = db.collection("activity")
+        if event_id:
+            ref = ref.where("eventId", "==", event_id)
+        ref = ref.order_by("ts", direction="DESCENDING").limit(limit)
+
+        snaps = list(ref.stream())
+        items = []
+        for s in snaps:
+            d = s.to_dict() or {}
+            ts = d.get("ts")
+            if ts:
+                d["ts"] = ts.datetime.isoformat()
+            d["id"] = s.id
+            items.append(d)
+
+        ser = ActivitySerializer(items, many=True)
+        return Response({"items": ser.data})

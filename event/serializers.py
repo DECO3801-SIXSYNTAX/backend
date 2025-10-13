@@ -1,4 +1,3 @@
-# event/serializers.py
 from rest_framework import serializers
 
 # ---------- Event ----------
@@ -25,6 +24,7 @@ class EventSerializer(serializers.Serializer):
     createdBy = serializers.CharField()
     createdAt = serializers.CharField(required=False)
     updatedAt = serializers.CharField(required=False)
+    company = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 # ---------- Old (versioned) layout ----------
 class LayoutElementSer(serializers.Serializer):

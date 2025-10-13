@@ -18,17 +18,28 @@ from .layout_repository import get_layout as lr_get_layout, save_layout as lr_sa
 
 
 # =========================
-# Helpers (RBAC & mapping)
+# Helpers (RBAC & tenancy)
 # =========================
 
 def _same_id(a, b) -> bool:
     return str(a).strip() == str(b).strip()
 
+def _same_company(a, b) -> bool:
+    return (a or "").strip().upper() == (b or "").strip().upper()
+
 def _can_access_event(user, event_dict) -> bool:
+    """
+    Superuser bebas. Selain itu: harus satu company DAN
+    owner/collaborator dari event tersebut.
+    """
     if not event_dict:
         return False
     if getattr(user, "is_superuser", False):
         return True
+
+    if not _same_company(getattr(user, "company", None), event_dict.get("company")):
+        return False
+
     uid = str(getattr(user, "pk", getattr(user, "id", "")))
     owner_ok = _same_id(event_dict.get("createdBy"), uid)
     collabs = set(map(str, (event_dict.get("collaborators") or [])))
@@ -38,7 +49,11 @@ def _can_access_event_id(user, event_id: str):
     ev = erepo.get_event(event_id)
     return (_can_access_event(user, ev), ev)
 
-# --- mapping repo <-> FE ---
+
+# =========================
+# Mapping repo <-> FE model
+# =========================
+
 def _layout_to_fe(event_id: str, layout: dict | None) -> dict:
     canvas = (layout or {}).get("canvas", {}) or {}
     els = (layout or {}).get("elements", []) or []
@@ -61,7 +76,7 @@ def _layout_to_fe(event_id: str, layout: dict | None) -> dict:
             "config": {
                 "id": meta.get("configId", e.get("type")),
                 "shape": meta.get("shape", "rounded-rect"),
-                "icon": {},  # FE menentukan icon sendiri
+                "icon": {},
                 "label": meta.get("label", e.get("type")),
                 "color": geom.get("color", "#8B5CF6"),
                 "textColor": meta.get("textColor", "#FFFFFF"),
@@ -141,7 +156,7 @@ def _fe_to_layout_payload(fe: dict, current_version: int) -> dict:
 
 
 # =========================
-# Event CRUD
+# Event CRUD (company-aware)
 # =========================
 
 class EventViewSet(viewsets.ViewSet):
@@ -150,7 +165,8 @@ class EventViewSet(viewsets.ViewSet):
     def list(self, request):
         mine = request.query_params.get("mine")
         owner_id = str(request.user.id) if mine == "1" else None
-        rows = erepo.list_events(owner_id)
+        company = getattr(request.user, "company", None)
+        rows = erepo.list_events(owner_id=owner_id, company=company)
 
         enriched = []
         for e in rows:
@@ -183,6 +199,9 @@ class EventViewSet(viewsets.ViewSet):
     def create(self, request):
         data = dict(request.data)
         data["createdBy"] = str(request.user.id)
+        # tenancy: inject company dari user yang login
+        data["company"] = (getattr(request.user, "company", "") or "").strip().upper()
+
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
@@ -198,6 +217,9 @@ class EventViewSet(viewsets.ViewSet):
         data = dict(request.data)
         data["id"] = pk
         data["createdBy"] = current.get("createdBy")
+        # jangan izinkan pindah company lewat update
+        data["company"] = current.get("company")
+
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
@@ -214,7 +236,7 @@ class EventViewSet(viewsets.ViewSet):
 
 
 # =========================================
-# Layout endpoints — now FE-friendly
+# Layout endpoints — FE-friendly + locking
 # =========================================
 
 class LayoutSaveView(APIView):
@@ -244,13 +266,14 @@ class LayoutSaveView(APIView):
             payload = _fe_to_layout_payload(fe, int(current.get("version", 1)))
             result = lr_save_layout(payload)
             if result.get("conflict"):
+                # retry once dengan versi terbaru
                 payload["version"] = int(result["current_version"])
                 result = lr_save_layout(payload)
 
             saved = lr_get_layout(fe["eventId"])
             return Response(_layout_to_fe(fe["eventId"], saved), status=200)
 
-        # --- Payload lama (tetap didukung)
+        # --- Legacy payload (tetap didukung)
         legacy_ser = LayoutSaveSer(data=body)
         legacy_ser.is_valid(raise_exception=True)
         data = legacy_ser.validated_data
@@ -277,7 +300,6 @@ class LayoutSaveView(APIView):
                     "current_version": result["current_version"]
                 }, status=409)
 
-        # kembalikan FE-shape juga supaya konsisten
         saved = lr_get_layout(data["event_id"])
         return Response(_layout_to_fe(data["event_id"], saved), status=200)
 
@@ -305,10 +327,6 @@ class LayoutReadView(APIView):
 
         return Response(_layout_to_fe(event_id, layout), status=200)
 
-
-# =========================
-# (optional) meta endpoint
-# =========================
 
 class LayoutMetaView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsPlanner]
