@@ -78,7 +78,7 @@ def upsert_guest(event_id: str, data: Dict[str, Any], *, actor=None) -> str:
         event_id=event_id,
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
-        details={"name": payload.get("name"), "email": payload.get("email")}
+        #details={"name": payload.get("name"), "email": payload.get("email")}
     )
     return guest_id
 
@@ -148,3 +148,13 @@ def list_guests(
     items = [{**(s.to_dict() or {}), "id": s.id} for s in snaps]
     next_token = snaps[-1].id if len(snaps) == limit else None
     return items, next_token
+
+
+def get_guest(event_id: str, guest_id: str) -> dict | None:
+    res = list_guests(event_id=event_id, limit=10000)
+    items = res[0] if isinstance(res, tuple) else res
+    for x in items or []:
+        if str(x.get("id")) == str(guest_id):
+            return x
+    return None
+
