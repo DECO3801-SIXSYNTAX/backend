@@ -20,6 +20,7 @@ from .serializers import (
 from . import repository as erepo
 from .layout_repository import get_layout as lr_get_layout, save_layout as lr_save_layout
 
+from adminapi.activity import log_activity
 User = get_user_model()
 
 
@@ -225,6 +226,15 @@ class EventViewSet(viewsets.ViewSet):
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
+        log_activity(
+                action="event.creation",           
+                entity_type="event",
+                entity_id=str(eid),
+                event_id=str(eid),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,          
+            )
         return Response({"id": eid}, status=status.HTTP_201_CREATED)
 
     def update(self, request, pk=None):
@@ -242,6 +252,15 @@ class EventViewSet(viewsets.ViewSet):
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
+        log_activity(
+                action="event.update",
+                entity_type="event",
+                entity_id=str(current.id),
+                event_id=str(current.id),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,
+            )
         return Response({"id": eid})
 
     def destroy(self, request, pk=None):
@@ -251,6 +270,15 @@ class EventViewSet(viewsets.ViewSet):
         if not _can_access_event(request.user, current):
             return Response({"detail": "Forbidden"}, status=403)
         erepo.delete_event(pk)
+        log_activity(
+                action="event.delete",
+                entity_type="event",
+                entity_id=str(current.id),
+                event_id=str(current.id),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,
+            )
         return Response(status=204)
 
     # -------- Collaborators --------

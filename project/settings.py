@@ -2,9 +2,6 @@ from pathlib import Path
 import os
 from datetime import timedelta
 from dotenv import load_dotenv
-load_dotenv()
-
-from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
@@ -22,14 +19,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
-    #'accounts',
+    'accounts',
     'events',
     'adminapi',
-    'anymail',
-    'authentication',
-    'event',
-    
 ]
+
+AUTH_USER_MODEL = 'accounts.User'
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -40,12 +35,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True 
-
-ROOT_URLCONF = 'SiPanit.urls'
+ROOT_URLCONF = 'project.urls'
 
 TEMPLATES = [{
     'BACKEND':'django.template.backends.django.DjangoTemplates',
@@ -59,17 +51,14 @@ TEMPLATES = [{
     ]},
 }]
 
-WSGI_APPLICATION = 'SiPanit.wsgi.application'
-ASGI_APPLICATION = 'SiPanit.asgi.application'
+WSGI_APPLICATION = 'project.wsgi.application'
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {"timeout": 30},  # wait up to 30s instead of failing fast
+    'default': {
+        'ENGINE':'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3'
     }
 }
-
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Australia/Brisbane'
@@ -92,39 +81,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': ('rest_framework.permissions.IsAuthenticated',)
 }
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7)
+}
 
 # ----- Firebase service account path -----
 FIREBASE_SERVICE_ACCOUNT = os.getenv('FIREBASE_SERVICE_ACCOUNT', '')
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
-}
-
-AUTH_USER_MODEL = "authentication.User"
-
-from datetime import timedelta
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-}
-
-TIME_ZONE = "Australia/Brisbane"
-
-# Email configuration
-EMAIL_BACKEND = "SiPanit.email_backends.MultiEmailBackend"
-DEFAULT_FROM_EMAIL = "hevaquenta@gmail.com"
-
-# Anymail configuration for SendGrid
-ANYMAIL = {
-    "SENDGRID_API_KEY": os.getenv("SENDGRID_API_KEY"),
-}
-
-# Google OAuth configuration
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")

@@ -44,4 +44,8 @@ urlpatterns = [
 
     # DRF router (users listing, retrieve, create, etc.)
     path("api/", include(router.urls)),
-]
+
+    path("api/event/", include("event.urls")),
+    path("api/admin/", include("adminapi.urls")),
+    path("api/guest/", include("guest.urls")),
+]   
