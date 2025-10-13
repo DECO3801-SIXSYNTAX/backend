@@ -208,13 +208,13 @@ class EventViewSet(viewsets.ViewSet):
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
         log_activity(
-                action="event.creation",           # or "event.update" if you prefer
+                action="event.creation",           
                 entity_type="event",
-                entity_id=str(data.id),
-                event_id=str(data.id),
+                entity_id=str(eid),
+                event_id=str(eid),
                 actor_id=str(getattr(request.user, "id", "")),
                 actor_email=getattr(request.user, "email", None),
-                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+                #details=changed_fields,          
             )
         return Response({"id": eid}, status=status.HTTP_201_CREATED)
 
@@ -235,13 +235,13 @@ class EventViewSet(viewsets.ViewSet):
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
         log_activity(
-                action="event.update",           # or "event.update" if you prefer
+                action="event.update",
                 entity_type="event",
                 entity_id=str(current.id),
                 event_id=str(current.id),
                 actor_id=str(getattr(request.user, "id", "")),
                 actor_email=getattr(request.user, "email", None),
-                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+                #details=changed_fields,
             )
         return Response({"id": eid})
 
@@ -253,13 +253,13 @@ class EventViewSet(viewsets.ViewSet):
             return Response({"detail": "Forbidden"}, status=403)
         erepo.delete_event(pk)
         log_activity(
-                action="event.delete",           # or "event.update" if you prefer
+                action="event.delete",
                 entity_type="event",
                 entity_id=str(current.id),
                 event_id=str(current.id),
                 actor_id=str(getattr(request.user, "id", "")),
                 actor_email=getattr(request.user, "email", None),
-                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+                #details=changed_fields,
             )
         return Response(status=204)
 
