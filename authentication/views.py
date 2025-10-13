@@ -53,9 +53,47 @@ class _LoginSerializer(TokenObtainPairSerializer):
         return t
 
     def validate(self, attrs):
-        data = super().validate(attrs)
-        data["user"] = UserSerializer(self.user).data
-        return data
+        # Get username/email and password from request
+        username_or_email = attrs.get('username')
+        password = attrs.get('password')
+
+        if not username_or_email or not password:
+            from rest_framework.exceptions import AuthenticationFailed
+            raise AuthenticationFailed('Username and password required')
+
+        # Try to find user - prioritize username match over email match
+        user = None
+
+        # Strategy: Look for user by username OR email, but exclude Google OAuth users
+        # Google OAuth users have username == email (e.g., both are "googleuser@gmail.com")
+        # Regular users have username != email (e.g., username="andika", email="andika@gmail.com")
+
+        candidates = User.objects.filter(
+            Q(username=username_or_email) | Q(email=username_or_email)
+        )
+
+        for candidate in candidates:
+            # Skip Google OAuth users (where username equals email)
+            if candidate.username == candidate.email:
+                continue
+            # Check password
+            if candidate.check_password(password):
+                user = candidate
+                break
+
+        # If user found and authenticated, return tokens
+        if user:
+            refresh = self.get_token(user)
+            data = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': UserSerializer(user).data
+            }
+            return data
+
+        # If no valid user found, raise error
+        from rest_framework.exceptions import AuthenticationFailed
+        raise AuthenticationFailed('Invalid credentials')
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -271,9 +309,11 @@ class GoogleLoginView(APIView):
         first = full_name.split(" ")[0] if full_name else ""
         last = " ".join(full_name.split(" ")[1:]) if " " in full_name else ""
 
+        # For Google OAuth, use username=email as the unique identifier
+        # This prevents matching regular users who have the same email but different username
         user, created = User.objects.get_or_create(
-            email=email,
-            defaults={"username": email, "first_name": first, "last_name": last},
+            username=email,  # Changed from email=email to username=email
+            defaults={"email": email, "first_name": first, "last_name": last},
         )
 
         if created and role_name:
