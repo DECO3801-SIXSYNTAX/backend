@@ -6,6 +6,7 @@ from .views import (
     LayoutSaveView,
     LayoutReadView,
     LayoutMetaView,
+    EventStatsView
 )
 
 router = DefaultRouter()
@@ -18,4 +19,5 @@ urlpatterns = [
     path("layouts/save/", LayoutSaveView.as_view(), name="layout-save"),
     path("layouts/<str:event_id>/", LayoutReadView.as_view(), name="layout-read"),
     path("layouts/meta/<str:event_id>/", LayoutMetaView.as_view(), name="layout-meta"),
+    path("<str:event_id>/stats/", EventStatsView.as_view(), name="event-stats"),
 ]

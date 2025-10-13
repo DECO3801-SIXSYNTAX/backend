@@ -345,3 +345,46 @@ class LayoutMetaView(APIView):
             "updatedAt": layout.get("updatedAt"),
             "has_elements": bool(layout.get("elements")),
         }, status=200)
+    
+# event/views.py (tambahkan)
+class EventStatsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsPlanner]
+
+    def get(self, request, event_id: str):
+        # pastikan akses
+        allowed, ev = _can_access_event_id(request.user, event_id)
+        if not allowed or not ev:
+            return Response({"detail": "Forbidden"}, status=403)
+
+        # ---- ambil layout untuk hitung kursi terpakai ----
+        layout = lr_get_layout(event_id) or {"elements": []}
+        assigned = 0
+        for el in layout.get("elements", []):
+            assigned += len(el.get("assigned_guest_ids", []) or [])
+
+        # ---- contoh ambil guests dari Firestore (jika kamu simpan di events/{id}/guests) ----
+        from SiPanit.firebase import get_db
+        db = get_db()
+        guests = list(db.collection("events").document(event_id).collection("guests").stream())
+        total_guests = len(guests)
+
+        dietary = 0
+        accessibility = 0
+        for g in guests:
+            d = g.to_dict() or {}
+            if d.get("dietaryNeeds"):
+                dietary += 1
+            if d.get("accessibilityNeeds"):
+                accessibility += 1
+
+        completion = 0
+        if total_guests > 0:
+            completion = round(assigned * 100.0 / total_guests, 2)
+
+        return Response({
+            "totalGuests": total_guests,
+            "assignedSeats": assigned,
+            "dietaryNeeds": dietary,
+            "accessibilityNeeds": accessibility,
+            "completionRate": completion
+        })
