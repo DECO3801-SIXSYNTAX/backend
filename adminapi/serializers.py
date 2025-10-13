@@ -23,8 +23,7 @@ class ActivitySerializer(serializers.Serializer):
     eventId = serializers.CharField(allow_null=True, required=False)
     actorId = serializers.CharField(allow_null=True, required=False)
     actorEmail = serializers.EmailField(allow_null=True, required=False)
-    details = serializers.DictField(required=False)
-
+    
     # Optional human-readable sentence
     summary = serializers.SerializerMethodField()
 

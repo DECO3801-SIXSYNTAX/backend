@@ -10,7 +10,6 @@ def log_activity(
     event_id: Optional[str],
     actor_id: Optional[str],
     actor_email: Optional[str],
-    details: Optional[Dict[str, Any]] = None,
 ):
     db = get_db()
     db.collection("activity").add({
@@ -21,5 +20,4 @@ def log_activity(
         "eventId": event_id,
         "actorId": actor_id,
         "actorEmail": actor_email,
-        "details": details or {},
     })

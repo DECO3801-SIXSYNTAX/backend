@@ -16,6 +16,8 @@ from .serializers import (
 from . import repository as erepo
 from .layout_repository import get_layout as lr_get_layout, save_layout as lr_save_layout
 
+from adminapi.activity import log_activity
+
 
 # =========================
 # Helpers (RBAC & tenancy)
@@ -205,6 +207,15 @@ class EventViewSet(viewsets.ViewSet):
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
+        log_activity(
+                action="event.creation",           # or "event.update" if you prefer
+                entity_type="event",
+                entity_id=str(data.id),
+                event_id=str(data.id),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+            )
         return Response({"id": eid}, status=status.HTTP_201_CREATED)
 
     def update(self, request, pk=None):
@@ -223,6 +234,15 @@ class EventViewSet(viewsets.ViewSet):
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
+        log_activity(
+                action="event.update",           # or "event.update" if you prefer
+                entity_type="event",
+                entity_id=str(current.id),
+                event_id=str(current.id),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+            )
         return Response({"id": eid})
 
     def destroy(self, request, pk=None):
@@ -232,6 +252,15 @@ class EventViewSet(viewsets.ViewSet):
         if not _can_access_event(request.user, current):
             return Response({"detail": "Forbidden"}, status=403)
         erepo.delete_event(pk)
+        log_activity(
+                action="event.delete",           # or "event.update" if you prefer
+                entity_type="event",
+                entity_id=str(current.id),
+                event_id=str(current.id),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+            )
         return Response(status=204)
 
 

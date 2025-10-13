@@ -14,6 +14,7 @@ from events.serializers import EventSerializer
 from .permissions import IsAdminOnly, IsPlannerOrAdmin
 from .serializers import AdminUserUpdateSerializer, AdminEventUpdateSerializer, ActivitySerializer
 from .models import AdminSettings
+from .activity import log_activity
 
 from SiPanit.firebase import get_db
 
@@ -71,6 +72,14 @@ class AdminUsersViewSet(viewsets.ViewSet):
 
         if changed:
             u.save(update_fields=["role","is_active"])
+            log_activity(
+            action="user.update",
+            entity_type="user",
+            entity_id=str(u.id),
+            event_id=None,
+            actor_id=str(request.user.id),
+            actor_email=request.user.email,
+        )
 
         return Response(UserSerializer(u).data)
 
@@ -119,14 +128,33 @@ class AdminEventsViewSet(viewsets.ViewSet):
 
         if changed:
             ev.save(update_fields=["status"])
+            log_activity(
+                action="event.update",           # or "event.update" if you prefer
+                entity_type="event",
+                entity_id=str(ev.id),
+                event_id=str(ev.id),
+                actor_id=str(getattr(request.user, "id", "")),
+                actor_email=getattr(request.user, "email", None),
+                #details=changed_fields,          # your ActivitySerializer will turn this into a nice sentence
+            )
         return Response(EventSerializer(ev).data)
 
     def destroy(self, request, pk=None):
         try:
             ev = Event.objects.get(pk=pk)
+            entity_id= str(ev.id)
         except Event.DoesNotExist:
             return Response({"detail": "Not found"}, status=404)
         ev.delete()
+        log_activity(
+            action="event.delete",
+            entity_type="event",
+            entity_id=entity_id,
+            event_id=entity_id,
+            actor_id=str(getattr(request.user, "id", "")),
+            actor_email=getattr(request.user, "email", None),
+            #details={"name": ev_name},
+        )
         return Response(status=204)
 
 class RecentActivityView(APIView):
