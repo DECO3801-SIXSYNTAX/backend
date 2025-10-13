@@ -8,11 +8,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from SiPanit.views import health
 from authentication.views import UserViewSet
 
-# DRF Router
+# ---- DRF router (company-scoped users) ----
 router = DefaultRouter()
-router.register(r"users", UserViewSet, basename="user")
+router.register(r"users", UserViewSet, basename="users")
 
-# Simple API root
 def api_root(request):
     return JsonResponse({
         "message": "SiPanit API is running",
@@ -34,17 +33,15 @@ urlpatterns = [
     # Health check
     path("api/health/", health),
 
-    # JWT endpoints
+    # Auth (JWT and custom auth routes)
     path("api/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("api/auth/", include("authentication.urls")),  # register/login/reset, etc.
 
-    # App routes
-    path("api/auth/", include("authentication.urls")),
-    #path("api/accounts/", include("accounts.urls")),
-    path("api/events/", include("events.urls")),
+    # Domain APIs
+    path("api/events/", include("events.urls")),  # your 'events' app
+    path("api/event/", include("event.urls")),    # your 'event' app (layouts etc.)
 
-    # DRF router (users, etc.)
+    # DRF router (users listing, retrieve, create, etc.)
     path("api/", include(router.urls)),
-
-    path("api/event/", include("event.urls")),
 ]
