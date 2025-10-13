@@ -81,3 +81,9 @@ class FEFloorPlanSer(serializers.Serializer):
     roomBoundary = FERoomBoundarySer(required=False, allow_null=True)
     createdAt = serializers.CharField(required=False, allow_blank=True)
     updatedAt = serializers.CharField(required=False, allow_blank=True)
+
+class InviteVendorSer(serializers.Serializer):
+    email = serializers.EmailField()
+    name = serializers.CharField(required=False, allow_blank=True)
+    company = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    message = serializers.CharField(required=False, allow_blank=True)
