@@ -1,5 +1,11 @@
 from rest_framework import serializers
 
+# ---------- Event Settings ----------
+class EventSettingsSer(serializers.Serializer):
+    allowEditLayout = serializers.BooleanField(required=False, default=True)
+    allowInviteCollaborators = serializers.BooleanField(required=False, default=True)
+    enableVersionHistory = serializers.BooleanField(required=False, default=True)
+
 # ---------- Event ----------
 class EventSerializer(serializers.Serializer):
     id = serializers.CharField(required=False)
@@ -25,6 +31,22 @@ class EventSerializer(serializers.Serializer):
     createdAt = serializers.CharField(required=False)
     updatedAt = serializers.CharField(required=False)
     company = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    # NEW
+    settings = EventSettingsSer(required=False)
+
+    def to_internal_value(self, data):
+        obj = super().to_internal_value(data)
+        # inject default settings kalau kosong
+        defaults = {
+            "allowEditLayout": True,
+            "allowInviteCollaborators": True,
+            "enableVersionHistory": True,
+        }
+        s = (obj.get("settings") or {}) if "settings" in obj else {}
+        defaults.update(s)
+        obj["settings"] = defaults
+        return obj
 
 # ---------- Old (versioned) layout ----------
 class LayoutElementSer(serializers.Serializer):
@@ -82,6 +104,7 @@ class FEFloorPlanSer(serializers.Serializer):
     createdAt = serializers.CharField(required=False, allow_blank=True)
     updatedAt = serializers.CharField(required=False, allow_blank=True)
 
+# ---------- Invite Vendor ----------
 class InviteVendorSer(serializers.Serializer):
     email = serializers.EmailField()
     name = serializers.CharField(required=False, allow_blank=True)
