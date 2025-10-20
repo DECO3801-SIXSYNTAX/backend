@@ -1,11 +1,11 @@
 from __future__ import annotations
-from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 import re
 from firebase_admin import firestore
 from SiPanit.firebase import get_db
 from adminapi.activity import log_activity
 from datetime import datetime, timezone
+
 
 COLL = "events"
 
@@ -160,3 +160,39 @@ def get_guest(event_id: str, guest_id: str) -> dict | None:
             return x
     return None
 
+def get_event(event_id: str) -> Optional[Dict[str, Any]]:
+    db = get_db()
+    doc = db.collection(COLL).document(event_id).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    data["id"] = doc.id
+    return data
+
+def resolve_guest_email_from_event(event: Dict[str, Any], guest_id: str) -> Optional[str]:
+    gid = str(guest_id)
+
+    guest_index = event.get("guestIndex")
+    if isinstance(guest_index, dict):
+        node = guest_index.get(gid)
+        if isinstance(node, dict):
+            email = (node.get("email") or "").strip().lower()
+            if email:
+                return email
+
+    guest_emails = event.get("guestEmails")
+    if isinstance(guest_emails, dict):
+        email = (guest_emails.get(gid) or "").strip().lower()
+        if email:
+            return email
+
+    guests_arr = event.get("guests")
+    if isinstance(guests_arr, list):
+        for g in guests_arr:
+            if isinstance(g, dict):
+                cand_id = str(g.get("id") or g.get("uid") or g.get("guest_id") or "")
+                if cand_id == gid:
+                    email = (g.get("email") or "").strip().lower()
+                    if email:
+                        return email
+    return None
