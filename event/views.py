@@ -1,26 +1,34 @@
+# event/views.py
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.utils.timezone import now
+
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError, PermissionDenied
+from rest_framework.settings import api_settings  # <-- penting: pakai settings DRF yang benar
 
 from authentication.permissions import IsPlanner
 from .serializers import (
     EventSerializer,
     LayoutSaveSer,
     FEFloorPlanSer,
-    # pastikan kamu punya serializer ini: email (required), name/company/message (optional)
-    InviteVendorSer,
+    InviteVendorSer,   # email (required), name/company/message (optional)
 )
 from . import repository as erepo
 from .layout_repository import get_layout as lr_get_layout, save_layout as lr_save_layout
 
-from adminapi.activity import log_activity
+# (opsional) activity log; kalau modul ini belum ada, kamu bisa hapus bagian log_activity
+try:
+    from adminapi.activity import log_activity
+except Exception:
+    def log_activity(**kwargs):
+        return None
+
 User = get_user_model()
 
 
@@ -30,10 +38,6 @@ User = get_user_model()
 
 def _same_id(a, b) -> bool:
     return str(a).strip() == str(b).strip()
-
-
-def _same_company(a, b) -> bool:
-    return (a or "").strip().upper() == (b or "").strip().upper()
 
 
 def _can_access_event(user, event_dict) -> bool:
@@ -69,6 +73,7 @@ def _layout_to_fe(event_id: str, layout: dict | None) -> dict:
     for e in els:
         geom = e.get("geom", {}) or {}
         meta = geom.get("meta", {}) or {}
+
         # jaga-jaga kalau width/height bukan angka
         width_val = geom.get("width", 80)
         height_val = geom.get("height", 60)
@@ -175,6 +180,7 @@ def _fe_to_layout_payload(fe: dict, current_version: int) -> dict:
 
 class EventViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, IsPlanner]
+    settings = api_settings  # <-- pastikan tidak menimpa DRF settings
 
     # --- helper: hanya owner atau superuser yang boleh edit collaborators
     def _require_owner(self, request, ev: dict):
@@ -226,15 +232,15 @@ class EventViewSet(viewsets.ViewSet):
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
+
         log_activity(
-                action="event.creation",           
-                entity_type="event",
-                entity_id=str(eid),
-                event_id=str(eid),
-                actor_id=str(getattr(request.user, "id", "")),
-                actor_email=getattr(request.user, "email", None),
-                #details=changed_fields,          
-            )
+            action="event.creation",
+            entity_type="event",
+            entity_id=str(eid),
+            event_id=str(eid),
+            actor_id=str(getattr(request.user, "id", "")),
+            actor_email=getattr(request.user, "email", None),
+        )
         return Response({"id": eid}, status=status.HTTP_201_CREATED)
 
     def update(self, request, pk=None):
@@ -252,15 +258,15 @@ class EventViewSet(viewsets.ViewSet):
         ser = EventSerializer(data=data)
         ser.is_valid(raise_exception=True)
         eid = erepo.upsert_event(ser.validated_data)
+
         log_activity(
-                action="event.update",
-                entity_type="event",
-                entity_id=str(current.id),
-                event_id=str(current.id),
-                actor_id=str(getattr(request.user, "id", "")),
-                actor_email=getattr(request.user, "email", None),
-                #details=changed_fields,
-            )
+            action="event.update",
+            entity_type="event",
+            entity_id=str(current.get("id", pk)),
+            event_id=str(current.get("id", pk)),
+            actor_id=str(getattr(request.user, "id", "")),
+            actor_email=getattr(request.user, "email", None),
+        )
         return Response({"id": eid})
 
     def destroy(self, request, pk=None):
@@ -269,16 +275,17 @@ class EventViewSet(viewsets.ViewSet):
             return Response(status=204)
         if not _can_access_event(request.user, current):
             return Response({"detail": "Forbidden"}, status=403)
+
         erepo.delete_event(pk)
+
         log_activity(
-                action="event.delete",
-                entity_type="event",
-                entity_id=str(current.id),
-                event_id=str(current.id),
-                actor_id=str(getattr(request.user, "id", "")),
-                actor_email=getattr(request.user, "email", None),
-                #details=changed_fields,
-            )
+            action="event.delete",
+            entity_type="event",
+            entity_id=str(current.get("id", pk)),
+            event_id=str(current.get("id", pk)),
+            actor_id=str(getattr(request.user, "id", "")),
+            actor_email=getattr(request.user, "email", None),
+        )
         return Response(status=204)
 
     # -------- Collaborators --------
@@ -315,7 +322,6 @@ class EventViewSet(viewsets.ViewSet):
             raise ValidationError("Target user must have role 'vendor'.")
 
         erepo.add_collaborator(pk, str(target.id))
-        # return state terbaru
         latest = erepo.get_event(pk) or {}
         return Response({"detail": "Collaborator invited", "collaborators": latest.get("collaborators", [])})
 
@@ -329,8 +335,16 @@ class EventViewSet(viewsets.ViewSet):
             return Response({"detail": "Not found"}, status=404)
         self._require_owner(request, ev)
 
-        user_id = (request.data.get("user_id") or "").strip()
-        email = (request.data.get("email") or "").strip().lower()
+        # request.data bisa berupa dict atau list (misal Postman raw JSON array),
+        # normalisasi dulu.
+        body = request.data
+        if isinstance(body, list):
+            if not body:
+                return Response({"detail": "Empty payload."}, status=400)
+            body = body[0] if isinstance(body[0], dict) else {}
+
+        user_id = (body.get("user_id") or "").strip()
+        email = (body.get("email") or "").strip().lower()
 
         tid = None
         if user_id:
@@ -341,7 +355,7 @@ class EventViewSet(viewsets.ViewSet):
             except User.DoesNotExist:
                 return Response({"detail": "No such user; nothing to remove."})
         else:
-            raise ValidationError("Provide 'user_id' or 'email'.")
+            return Response({"detail": "Provide 'user_id' or 'email'."}, status=400)
 
         erepo.remove_collaborator(pk, str(tid))
         latest = erepo.get_event(pk) or {}
@@ -381,8 +395,12 @@ class EventViewSet(viewsets.ViewSet):
         erepo.add_collaborator(pk, str(user.id))
         latest = erepo.get_event(pk) or {}
         return Response(
-            {"detail": "Vendor invited", "user_id": str(user.id), "created_user": created,
-             "collaborators": latest.get("collaborators", [])},
+            {
+                "detail": "Vendor invited",
+                "user_id": str(user.id),
+                "created_user": created,
+                "collaborators": latest.get("collaborators", []),
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -392,6 +410,9 @@ class EventViewSet(viewsets.ViewSet):
 # =========================================
 
 class LayoutSaveView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsPlanner]
+    settings = api_settings  # <-- penting
+
     """
     POST /api/event/layouts/save/
     - Bisa menerima:
@@ -399,7 +420,6 @@ class LayoutSaveView(APIView):
       b) Payload lama (event_id/version/canvas/elements)
     - Response: FE floorplan.
     """
-    permission_classes = [permissions.IsAuthenticated, IsPlanner]
 
     def post(self, request):
         body = request.data or {}
@@ -418,6 +438,7 @@ class LayoutSaveView(APIView):
             payload = _fe_to_layout_payload(fe, int(current.get("version", 1)))
             result = lr_save_layout(payload)
             if result.get("conflict"):
+                # retry sekali dengan versi terbaru
                 payload["version"] = int(result["current_version"])
                 result = lr_save_layout(payload)
 
@@ -456,11 +477,13 @@ class LayoutSaveView(APIView):
 
 
 class LayoutReadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    settings = api_settings  # <-- penting
+
     """
     GET /api/event/layouts/<event_id>/
     - Selalu balikan format FE floorplan agar FE bisa langsung render.
     """
-    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, event_id: str):
         allowed, _ = _can_access_event_id(request.user, event_id)
@@ -481,6 +504,7 @@ class LayoutReadView(APIView):
 
 class LayoutMetaView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsPlanner]
+    settings = api_settings  # <-- penting
 
     def get(self, request, event_id: str):
         ev = erepo.get_event(event_id)
@@ -504,6 +528,7 @@ class LayoutMetaView(APIView):
 
 class EventStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsPlanner]
+    settings = api_settings  # <-- penting
 
     def get(self, request, event_id: str):
         allowed, ev = _can_access_event_id(request.user, event_id)

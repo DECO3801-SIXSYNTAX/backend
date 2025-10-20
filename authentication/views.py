@@ -317,9 +317,11 @@ class GoogleLoginView(APIView):
         first = full_name.split(" ")[0] if full_name else ""
         last = " ".join(full_name.split(" ")[1:]) if " " in full_name else ""
 
+        # For Google OAuth, use username=email as the unique identifier
+        # This prevents matching regular users who have the same email but different username
         user, created = User.objects.get_or_create(
-            email=email,
-            defaults={"username": email, "first_name": first, "last_name": last},
+            username=email,  # Changed from email=email to username=email
+            defaults={"email": email, "first_name": first, "last_name": last},
         )
 
         # BLOCK: suspended users cannot log in via Google
