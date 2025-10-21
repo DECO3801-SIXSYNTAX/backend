@@ -30,6 +30,8 @@ INSTALLED_APPS = [
     'anymail',
     'authentication',
     'event',
+    'vendor',  # Add this
+
     
 ]
 

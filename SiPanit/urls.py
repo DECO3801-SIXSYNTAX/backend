@@ -48,4 +48,7 @@ urlpatterns = [
     path("api/event/", include("event.urls")),
     path("api/admin/", include("adminapi.urls")),
     path("api/guest/", include("guest.urls")),
+    
+    path("api/vendor/", include("vendor.urls")),
+
 ]   
