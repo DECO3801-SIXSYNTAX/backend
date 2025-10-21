@@ -10,9 +10,9 @@ import csv, io
 from django.http import HttpResponse
 
 from .serializers import GuestSerializer
-from .repository import get_guest, upsert_guest, delete_guest, list_guests, toggle_checkin, get_event, resolve_guest_email_from_event
+from .repository import get_guest, upsert_guest, delete_guest, list_guests, toggle_checkin, get_event, resolve_guest_email_from_event, partial_update_guest
 from typing import List, Optional, Any, Dict
-
+from datetime import datetime
 from crypto.qr import encrypt_payload, qr_png_bytes, decrypt_payload, decrypt_to_guest
 from django.conf import settings
 from django.utils.text import slugify
@@ -85,13 +85,9 @@ def bulk_send_invites(request, event_id: str):
     if not event:
         return Response({"detail": "Event not found"}, status=404)
 
-    
-    
-    # No guestIds provided -> send to ALL guests in the event (up to limit)
     items, _ = list_guests(event_id=event_id, limit=5000)
     targets = [(str(g.get("id")), g) for g in items]
 
-    
     event_name = event.get("name") or event.get("title") or "Your Event"
     starts_at  = event.get("startsAt")
     venue_name = event.get("venueName", "")
@@ -100,7 +96,6 @@ def bulk_send_invites(request, event_id: str):
     org_reply  = event.get("orgReplyEmail", "no-reply@example.com")
     event_date, event_time = _format_dt(starts_at)
 
-    
     sent, skipped = [], []
     for gid, guest in targets:
         try:
@@ -108,7 +103,6 @@ def bulk_send_invites(request, event_id: str):
                 skipped.append({"guestId": gid, "reason": "not_found"})
                 continue
 
-           
             email = resolve_guest_email_from_event(event, gid) or (guest.get("email") or "").strip().lower()
             if not email:
                 skipped.append({"guestId": gid, "reason": "missing_email"})
@@ -171,10 +165,10 @@ class GuestFirebaseViewSet(viewsets.ViewSet):
         return Response({"id": gid}, status=201)
 
     def partial_update(self, request, pk=None, event_id=None):
-        data = {**request.data, "id": pk, "eventId": event_id}
+        data = {**request.data}
         ser = GuestSerializer(data=data, partial=True)
         ser.is_valid(raise_exception=True)
-        gid = upsert_guest(event_id, ser.validated_data)
+        gid = partial_update_guest(event_id, pk, ser.validated_data, actor=request.user)
         return Response({"id": gid})
 
     def destroy(self, request, pk=None, event_id=None):

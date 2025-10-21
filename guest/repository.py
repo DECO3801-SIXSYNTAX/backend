@@ -6,7 +6,6 @@ from SiPanit.firebase import get_db
 from adminapi.activity import log_activity
 from datetime import datetime, timezone
 
-
 COLL = "events"
 
 # ---- audit helpers ----
@@ -56,11 +55,68 @@ def _normalize_guest_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "accessibilityNeeds": access,
         "tags": tags,
         "checkedIn": bool(data.get("checkedIn", False)),
-        #"searchPrefixes": list(set(_prefixes(full_for_search))),
+        # "searchPrefixes": list(set(_prefixes(full_for_search))),
     }
     if seat:
         payload["seat"] = seat
     return payload
+
+def _normalize_guest_payload_partial(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Include ONLY fields present in `data`.
+    Recompute tags iff dietaryRestriction or accessibilityNeeds are included.
+    """
+    out: Dict[str, Any] = {}
+
+    if "name" in data:
+        out["name"] = (data.get("name") or "").strip()
+    if "email" in data:
+        out["email"] = (data.get("email") or "").strip().lower()
+    if "phone" in data:
+        out["phone"] = (data.get("phone") or "").strip()
+    if "dietaryRestriction" in data:
+        out["dietaryRestriction"] = (data.get("dietaryRestriction") or "").strip()
+    if "accessibilityNeeds" in data:
+        out["accessibilityNeeds"] = (data.get("accessibilityNeeds") or "").strip()
+    if "checkedIn" in data:
+        out["checkedIn"] = bool(data.get("checkedIn"))
+    if "seat" in data and data.get("seat"):
+        out["seat"] = (data.get("seat") or "").strip()
+
+    # Only recompute tags when the related fields are touched
+    if ("dietaryRestriction" in data) or ("accessibilityNeeds" in data):
+        diet   = out.get("dietaryRestriction", (data.get("dietaryRestriction") or "").strip())
+        access = out.get("accessibilityNeeds", (data.get("accessibilityNeeds") or "").strip())
+        out["tags"] = _split_tags(diet, access)
+
+    return out
+
+def update_doc(doc_ref, updates: Dict[str, Any]) -> None:
+    if not updates:
+        return
+    updates = {**updates, "updatedAt": firestore.SERVER_TIMESTAMP}
+    doc_ref.update(updates)
+
+def partial_update_guest(event_id: str, guest_id: str, data: Dict[str, Any], *, actor=None) -> str:
+    db = get_db()
+    ref = _guests_col(db, event_id).document(str(guest_id))
+
+    snap = ref.get()
+    if not snap.exists:
+        raise LookupError("Guest not found")
+
+    payload = _normalize_guest_payload_partial(data)
+    update_doc(ref, payload)
+
+    log_activity(
+        action="guest.update",
+        entity_type="guest",
+        entity_id=str(guest_id),
+        event_id=event_id,
+        actor_id=str(getattr(actor, "id", None)),
+        actor_email=getattr(actor, "email", None),
+    )
+    return str(guest_id)
 
 def upsert_guest(event_id: str, data: Dict[str, Any], *, actor=None) -> str:
     db = get_db()
@@ -80,7 +136,6 @@ def upsert_guest(event_id: str, data: Dict[str, Any], *, actor=None) -> str:
         event_id=event_id,
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
-        #details={"name": payload.get("name"), "email": payload.get("email")}
     )
     return guest_id
 
@@ -150,7 +205,6 @@ def list_guests(
     items = [{**(s.to_dict() or {}), "id": s.id} for s in snaps]
     next_token = snaps[-1].id if len(snaps) == limit else None
     return items, next_token
-
 
 def get_guest(event_id: str, guest_id: str) -> dict | None:
     res = list_guests(event_id=event_id, limit=10000)
