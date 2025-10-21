@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><title>Get User ID</title></head>
+<body>
+<h1>Your User Information</h1>
+<pre id="output">Loading...</pre>
+<script>
+const user = JSON.parse(localStorage.getItem('user') || 'null');
+document.getElementById('output').textContent = JSON.stringify({
+  id: user?.id,
+  email: user?.email,
+  name: user?.name,
+  role: user?.role
+}, null, 2);
+console.log('User ID for migration:', user?.id);
+</script>
+<p><strong>User ID for migration:</strong> <code id="userid"></code></p>
+<script>
+document.getElementById('userid').textContent = user?.id || 'NOT FOUND - Please login first';
+</script>
+</body>
+</html>
