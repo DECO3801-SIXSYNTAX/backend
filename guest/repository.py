@@ -56,7 +56,7 @@ def _normalize_guest_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "accessibilityNeeds": access,
         "tags": tags,
         "checkedIn": bool(data.get("checkedIn", False)),
-        #"searchPrefixes": list(set(_prefixes(full_for_search))),
+        "searchPrefixes": list(set(_prefixes(full_for_search))),
     }
     if seat:
         payload["seat"] = seat
@@ -153,12 +153,25 @@ def list_guests(
 
 
 def get_guest(event_id: str, guest_id: str) -> dict | None:
-    res = list_guests(event_id=event_id, limit=10000)
-    items = res[0] if isinstance(res, tuple) else res
-    for x in items or []:
-        if str(x.get("id")) == str(guest_id):
-            return x
-    return None
+    db = get_db()
+    doc = db.collection("events").document(event_id).collection("guests").document(guest_id).get()
+    
+    if not doc.exists:
+        return None
+    
+    guest_data = doc.to_dict() or {}
+    guest_data["id"] = doc.id
+    
+    # Add seatId if guest is assigned to a seat in layout
+    from event.layout_repository import get_layout
+    layout = get_layout(event_id)
+    if layout:
+        for element in layout.get("elements", []):
+            if guest_id in (element.get("assigned_guest_ids") or []):
+                guest_data["seatId"] = element.get("id") or element.get("name")
+                break
+    
+    return guest_data
 
 def get_event(event_id: str) -> Optional[Dict[str, Any]]:
     db = get_db()
