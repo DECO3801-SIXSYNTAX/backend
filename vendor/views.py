@@ -17,7 +17,6 @@ def parse_iso_date(date_str):
     if not date_str:
         return None
     try:
-        # Handle 'Z' timezone
         if date_str.endswith('Z'):
             date_str = date_str[:-1] + '+00:00'
         return datetime.fromisoformat(date_str)
@@ -34,7 +33,6 @@ def get_event_status(start_date, end_date):
     if not start or not end:
         return 'planning'
     
-    # Make dates timezone-aware if they aren't
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
     if end.tzinfo is None:
@@ -60,7 +58,6 @@ class VendorEventViewSet(viewsets.ViewSet):
         db = get_db()
         user_id_str = str(user_id)
         
-        # Query events where user is in collaborators array
         events_ref = db.collection('events').where(
             'collaborators', 'array_contains', user_id_str
         )
@@ -82,13 +79,11 @@ class VendorEventViewSet(viewsets.ViewSet):
             user_id = request.user.id
             db = get_db()
             
-            # Get event IDs where user is collaborator
             event_ids = self._get_vendor_event_ids(user_id)
             
             if not event_ids:
                 return Response({'items': []})
             
-            # Fetch event details
             events_data = []
             for event_id in event_ids:
                 doc = db.collection('events').document(event_id).get()
@@ -96,7 +91,6 @@ class VendorEventViewSet(viewsets.ViewSet):
                     event_dict = doc.to_dict()
                     event_dict['id'] = doc.id
                     
-                    # Add computed status
                     event_dict['status'] = get_event_status(
                         event_dict.get('startDate'),
                         event_dict.get('endDate')
@@ -104,7 +98,6 @@ class VendorEventViewSet(viewsets.ViewSet):
                     
                     events_data.append(event_dict)
             
-            # Serialize
             serializer = VendorEventListSerializer(events_data, many=True)
             return Response({'items': serializer.data})
             
@@ -132,7 +125,6 @@ class VendorEventViewSet(viewsets.ViewSet):
             
             event_dict = doc.to_dict()
             
-            # Check access
             if not self._can_access_event(event_dict, request.user.id):
                 return Response(
                     {'detail': 'You do not have access to this event'}, 
@@ -145,7 +137,6 @@ class VendorEventViewSet(viewsets.ViewSet):
                 event_dict.get('endDate')
             )
             
-            # Serialize
             serializer = VendorEventDetailSerializer(event_dict)
             return Response(serializer.data)
             
@@ -165,7 +156,6 @@ class VendorEventViewSet(viewsets.ViewSet):
         try:
             db = get_db()
             
-            # Check event exists and user has access
             event_doc = db.collection('events').document(pk).get()
             if not event_doc.exists:
                 return Response(
@@ -179,12 +169,10 @@ class VendorEventViewSet(viewsets.ViewSet):
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            # Get layout
             from event.layout_repository import get_layout as get_layout_fs
             layout = get_layout_fs(pk)
             
             if not layout:
-                # Return empty layout structure
                 return Response({
                     'event_id': pk,
                     'version': 1,
@@ -205,7 +193,7 @@ class VendorEventViewSet(viewsets.ViewSet):
     def get_guests(self, request, pk=None):
         """
         GET /api/vendor/events/{id}/guests/
-        Get guests list for event
+        Get guests list for event with seat assignments
         """
         try:
             db = get_db()
@@ -224,6 +212,22 @@ class VendorEventViewSet(viewsets.ViewSet):
                     status=status.HTTP_403_FORBIDDEN
                 )
             
+            # Get layout to map guest assignments
+            from event.layout_repository import get_layout
+            layout = get_layout(pk)
+            
+            # Create mapping of guest_id -> seat info
+            guest_to_seat = {}
+            if layout:
+                for element in layout.get("elements", []):
+                    assigned_guests = element.get("assigned_guest_ids") or []
+                    for guest_id in assigned_guests:
+                        guest_to_seat[guest_id] = {
+                            "seatId": element.get("id"),
+                            "seatName": element.get("name"),
+                            "seatType": element.get("type")
+                        }
+            
             # Get guests
             from guest.repository import list_guests
             
@@ -239,6 +243,12 @@ class VendorEventViewSet(viewsets.ViewSet):
                 limit=limit, 
                 page_token=page_token
             )
+            
+            # Enrich guests with seat information
+            for guest in items:
+                guest_id = guest.get("id")
+                if guest_id in guest_to_seat:
+                    guest.update(guest_to_seat[guest_id])
             
             return Response({
                 'items': items,

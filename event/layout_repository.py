@@ -4,14 +4,14 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
 from SiPanit.firebase import get_db
-from google.cloud import firestore_v1 as firestore  # <-- use module, not Transaction class
+from google.cloud import firestore  # module import for Transaction
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 # ---------- Firestore paths ----------
-# events/{event_id}/layout/meta                (Document)
-# events/{event_id}/layout/meta/elements/*     (Collection)
+# events/{event_id}/floorplan/metadata         (Document)
+# events/{event_id}/floorplan/metadata/elements/*  (Collection)
 
 def _meta_ref(event_id: str):
     # DocumentReference → can .collection("elements")
@@ -19,12 +19,12 @@ def _meta_ref(event_id: str):
         get_db()
         .collection("events")
         .document(event_id)
-        .collection("layout")
-        .document("meta")
+        .collection("floorplan")
+        .document("metadata")
     )
 
 def _elements_coll(event_id: str):
-    # elements collection under meta document
+    # elements collection under metadata document
     return _meta_ref(event_id).collection("elements")
 
 # ---------- Queries ----------
@@ -44,14 +44,22 @@ def get_layout(event_id: str) -> Optional[Dict[str, Any]]:
             "type": d.get("type"),
             "name": d.get("name"),
             "capacity": d.get("capacity", 0),
-            "geom": d.get("geom", {}),
-            "assigned_guest_ids": d.get("assigned_guest_ids", []),
+            # support both: nested 'geom' (old) or flat coords (new)
+            "geom": (d.get("geom") or {k: d.get(k) for k in ("x","y","width","height","rotation","radius","color") if k in d}),
+            # support both: snake_case (old) or camelCase (new)
+            "assigned_guest_ids": (d.get("assigned_guest_ids") or d.get("assignedGuests") or []),
         })
 
     return {
         "event_id": event_id,
         "version": int(meta.get("version", 1)),
-        "canvas": meta.get("canvas", {}),
+        "canvas": (meta.get("canvas") or {
+            "width": (meta.get("canvasSize") or {}).get("width"),
+            "height": (meta.get("canvasSize") or {}).get("height"),
+            "px_per_m": meta.get("pixelsPerMeter"),
+            "roomBoundary": meta.get("roomBoundary"),
+            "floorplan_id": meta.get("floorplan_id"),
+        }),
         "elements": elements,
         "konva_snapshot": meta.get("konva_snapshot"),
         "updatedAt": meta.get("updatedAt"),
@@ -75,40 +83,22 @@ def save_layout(payload: Dict[str, Any]) -> Dict[str, Any]:
     # current element ids (outside tx)
     current_ids = {doc.id for doc in elements_coll.stream()}
 
-    @firestore.transactional  # <-- correct way
+    @firestore.transactional
     def _tx_fn(transaction: firestore.Transaction) -> Dict[str, Any]:
-        meta_snap = meta_ref.get(transaction=transaction)
+        meta_snap = transaction.get(meta_ref)
+        current_meta = meta_snap.to_dict() if meta_snap.exists else {}
+        current_version = int(current_meta.get("version", 1))
 
-        # init meta if missing
-        if not meta_snap.exists:
-            meta_doc = {
-                "version": 1,
-                "canvas": payload.get("canvas", {}),
-                "konva_snapshot": payload.get("konva_snapshot"),
-                "updatedAt": _now_iso(),
-                "createdAt": _now_iso(),
-            }
-            transaction.set(meta_ref, meta_doc)
-            current_ver = 1
-        else:
-            meta = meta_snap.to_dict() or {}
-            current_ver = int(meta.get("version", 1))
+        if current_version != incoming_ver:
+            return {"conflict": True, "current_version": current_version}
 
-        # version check
-        if current_ver != incoming_ver:
-            return {"conflict": True, "current_version": current_ver}
-
-        # bump version
-        new_version = current_ver + 1
-        transaction.update(meta_ref, {
+        new_version = current_version + 1
+        transaction.set(meta_ref, {
             "version": new_version,
-            "canvas": payload.get("canvas", {}),
-            "konva_snapshot": payload.get("konva_snapshot"),
             "updatedAt": _now_iso(),
-        })
+        }, merge=True)
 
-        # upsert elements
-        incoming_ids = set()
+        incoming_ids: set[str] = set()
         for el in payload.get("elements", []):
             el_id = el["id"]
             incoming_ids.add(el_id)
@@ -129,7 +119,6 @@ def save_layout(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         return {"conflict": False, "version": new_version}
 
-    # run the transaction
     transaction = db.transaction()
     result = _tx_fn(transaction)
     if result.get("conflict"):
