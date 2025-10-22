@@ -134,7 +134,7 @@ def upsert_guest(event_id: str, data: Dict[str, Any], *, actor=None) -> str:
         entity_type="guest",
         entity_id=guest_id,
         event_id=event_id,
-        actor_id=getattr(actor, "id", None),
+        actor_id=str(getattr(actor, "id", None)),
         actor_email=getattr(actor, "email", None),
     )
     return guest_id
@@ -146,9 +146,8 @@ def delete_guest(event_id: str, guest_id: str, *, actor=None) -> None:
         entity_type="guest",
         entity_id=guest_id,
         event_id=event_id,
-        actor_id=getattr(actor, "id", None),
+        actor_id=str(getattr(actor, "id", None)),
         actor_email=getattr(actor, "email", None),
-        details={}
     )
 
 def toggle_checkin(event_id: str, guest_id: str, *, actor=None) -> bool:
@@ -163,7 +162,7 @@ def toggle_checkin(event_id: str, guest_id: str, *, actor=None) -> bool:
         entity_type="guest",
         entity_id=guest_id,
         event_id=event_id,
-        actor_id=getattr(actor, "id", None),
+        actor_id=str(getattr(actor, "id", None)),
         actor_email=getattr(actor, "email", None),
         details={"checkedIn": new_val}
     )
