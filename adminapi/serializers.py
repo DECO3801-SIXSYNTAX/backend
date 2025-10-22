@@ -12,7 +12,7 @@ class AdminEventUpdateSerializer(serializers.Serializer):
     name   = serializers.CharField(required=False)
     date   = serializers.DateField(required=False)
     venue  = serializers.CharField(required=False, allow_blank=True)
-    status = serializers.ChoiceField(choices=["draft", "planning", "active"], required=False)
+    status = serializers.ChoiceField(choices=["DRAFT", "PUBLISHED"], required=False)
 
 class ActivitySerializer(serializers.Serializer):
     id = serializers.CharField()

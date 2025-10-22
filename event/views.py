@@ -192,8 +192,9 @@ class EventViewSet(viewsets.ViewSet):
 
     def list(self, request):
         mine = request.query_params.get("mine")
-        owner_id = str(request.user.id) if mine == "1" else None
-        company = getattr(request.user, "company", None)
+        # Filter by current user's ID (planner only sees their own events)
+        owner_id = str(request.user.id)
+        company = None  # Company filter disabled for now
         rows = erepo.list_events(owner_id=owner_id, company=company)
 
         enriched = []

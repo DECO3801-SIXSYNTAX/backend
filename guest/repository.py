@@ -36,6 +36,7 @@ def _split_tags(*values: str) -> List[str]:
     return sorted(tags)
 
 def _normalize_guest_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Full normalization for create/upsert - includes all fields"""
     name   = (data.get("name") or "").strip()
     email  = (data.get("email") or "").lower().strip()
     phone  = (data.get("phone") or "").strip()
@@ -61,6 +62,67 @@ def _normalize_guest_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     if seat:
         payload["seat"] = seat
     return payload
+
+def _normalize_guest_payload_partial(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Partial normalization - only includes fields present in data.
+    This prevents overwriting existing fields with empty values.
+    """
+    out = {}
+    
+    if "name" in data:
+        out["name"] = (data.get("name") or "").strip()
+    if "email" in data:
+        out["email"] = (data.get("email") or "").lower().strip()
+    if "phone" in data:
+        out["phone"] = (data.get("phone") or "").strip()
+    if "dietaryRestriction" in data:
+        out["dietaryRestriction"] = (data.get("dietaryRestriction") or "").strip()
+    if "accessibilityNeeds" in data:
+        out["accessibilityNeeds"] = (data.get("accessibilityNeeds") or "").strip()
+    if "checkedIn" in data:
+        out["checkedIn"] = bool(data.get("checkedIn"))
+    if "seat" in data and data.get("seat"):
+        out["seat"] = (data.get("seat") or "").strip()
+    
+    # Only recompute tags when the related fields are touched
+    if ("dietaryRestriction" in data) or ("accessibilityNeeds" in data):
+        diet   = out.get("dietaryRestriction", (data.get("dietaryRestriction") or "").strip())
+        access = out.get("accessibilityNeeds", (data.get("accessibilityNeeds") or "").strip())
+        out["tags"] = _split_tags(diet, access)
+    
+    return out
+
+def update_doc(doc_ref, updates: Dict[str, Any]) -> None:
+    """Helper to update a document with timestamp"""
+    if not updates:
+        return
+    updates = {**updates, "updatedAt": firestore.SERVER_TIMESTAMP}
+    doc_ref.update(updates)
+
+def partial_update_guest(event_id: str, guest_id: str, data: Dict[str, Any], *, actor=None) -> str:
+    """
+    Update only specified fields without overwriting other existing fields.
+    Prevents data loss when updating single fields like 'seat' or 'checkedIn'.
+    """
+    db = get_db()
+    ref = _guests_col(db, event_id).document(str(guest_id))
+    snap = ref.get()
+    if not snap.exists:
+        raise LookupError("Guest not found")
+    
+    payload = _normalize_guest_payload_partial(data)
+    update_doc(ref, payload)
+    
+    log_activity(
+        action="guest.update",
+        entity_type="guest",
+        entity_id=str(guest_id),
+        event_id=event_id,
+        actor_id=str(getattr(actor, "id", None)),
+        actor_email=getattr(actor, "email", None),
+    )
+    return str(guest_id)
 
 def upsert_guest(event_id: str, data: Dict[str, Any], *, actor=None) -> str:
     db = get_db()
@@ -147,7 +209,19 @@ def list_guests(
             ref = ref.start_after(cursor_doc)
 
     snaps = list(ref.limit(limit).stream())
-    items = [{**(s.to_dict() or {}), "id": s.id} for s in snaps]
+    # Map Firestore fields to frontend-expected fields
+    items = []
+    for s in snaps:
+        data = s.to_dict() or {}
+        # Map field names for frontend compatibility
+        mapped = {
+            **data,
+            "id": s.id,
+            "dietaryNeeds": data.get("dietaryRestriction", ""),  # Map to frontend field
+            "accessibility": data.get("accessibilityNeeds", ""),  # Map to frontend field
+            "table": data.get("seat", ""),  # Map seat to table for frontend
+        }
+        items.append(mapped)
     next_token = snaps[-1].id if len(snaps) == limit else None
     return items, next_token
 
@@ -157,6 +231,7 @@ def get_guest(event_id: str, guest_id: str) -> dict | None:
     items = res[0] if isinstance(res, tuple) else res
     for x in items or []:
         if str(x.get("id")) == str(guest_id):
+            # Already mapped by list_guests, so just return it
             return x
     return None
 
@@ -196,3 +271,4 @@ def resolve_guest_email_from_event(event: Dict[str, Any], guest_id: str) -> Opti
                     if email:
                         return email
     return None
+

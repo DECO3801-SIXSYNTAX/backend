@@ -19,6 +19,8 @@ def api_root(request):
             "users": "/api/users/",
             "auth": "/api/auth/",
             "admin": "/admin/",
+            "vendor": "/api/vendor/",
+            "guests": "/api/guests/",
             "health": "/api/health/"
         }
     })
@@ -47,5 +49,6 @@ urlpatterns = [
 
     path("api/event/", include("event.urls")),
     path("api/admin/", include("adminapi.urls")),
-    path("api/guest/", include("guest.urls")),
+    path("api/guests/", include("guest.urls")),  # Consistent plural form
+    path("api/vendor/", include("vendor.urls")),
 ]   

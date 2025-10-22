@@ -7,10 +7,11 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, MultiPartParser, JSONParser
 from .emails import send_guest_qr_email
 import csv, io
+from datetime import datetime
 from django.http import HttpResponse
 
 from .serializers import GuestSerializer
-from .repository import get_guest, upsert_guest, delete_guest, list_guests, toggle_checkin, get_event, resolve_guest_email_from_event
+from .repository import get_guest, upsert_guest, partial_update_guest, delete_guest, list_guests, toggle_checkin, get_event, resolve_guest_email_from_event
 from typing import List, Optional, Any, Dict
 
 from crypto.qr import encrypt_payload, qr_png_bytes, decrypt_payload, decrypt_to_guest
@@ -171,11 +172,16 @@ class GuestFirebaseViewSet(viewsets.ViewSet):
         return Response({"id": gid}, status=201)
 
     def partial_update(self, request, pk=None, event_id=None):
+        """PATCH /api/guest/{event_id}/{guest_id}/ - Partial update (only provided fields)"""
         data = {**request.data, "id": pk, "eventId": event_id}
         ser = GuestSerializer(data=data, partial=True)
         ser.is_valid(raise_exception=True)
-        gid = upsert_guest(event_id, ser.validated_data)
-        return Response({"id": gid})
+        # Use partial_update_guest to prevent data loss
+        try:
+            gid = partial_update_guest(event_id, pk, ser.validated_data, actor=request.user)
+            return Response({"id": gid})
+        except LookupError as e:
+            return Response({"detail": str(e)}, status=404)
 
     def destroy(self, request, pk=None, event_id=None):
         delete_guest(event_id, pk)
