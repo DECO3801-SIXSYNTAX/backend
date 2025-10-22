@@ -9,6 +9,7 @@ guest_import_csv  = GuestFirebaseViewSet.as_view({"post": "import_csv"})
 guest_qr_png      = GuestFirebaseViewSet.as_view({"get": "qr"})
 send_invite     = GuestFirebaseViewSet.as_view({"post": "send_invite"})
 # bulk_send_invites = GuestFirebaseViewSet.as_view({"post": "bulk_send_invites"})
+assign_seat        = GuestFirebaseViewSet.as_view({"patch": "assign_seat"})
 
 urlpatterns = [
     path("debug-decode-guest/", debug_decode_guest, name="guests-debug-decode-guest"),
@@ -18,6 +19,7 @@ urlpatterns = [
     path("<str:event_id>/<str:pk>/",guest_detail,name="guest-detail"),
     path("<str:event_id>/",guest_list_create, name="guest-list-create"),
     path("<str:event_id>/<str:guest_id>/send-invite/", send_invite, name="guest-send-invite"),
+    path("assign-seat/<str:event_id>/<str:pk>/",   assign_seat,   name="guest-assign-seat"),
     #path("<str:event_id>/toggle-checkin/",guest_toggle_ci, name="guest-toggle-checkin"),
     
 ]

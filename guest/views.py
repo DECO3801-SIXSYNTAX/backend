@@ -10,7 +10,8 @@ import csv, io
 from django.http import HttpResponse
 
 from .serializers import GuestSerializer
-from .repository import get_guest, upsert_guest, delete_guest, list_guests, toggle_checkin, get_event, resolve_guest_email_from_event, partial_update_guest
+from .repository import get_guest, upsert_guest, delete_guest, list_guests, toggle_checkin, get_event, resolve_guest_email_from_event, partial_update_guest, assign_guest_to_element
+from rest_framework.decorators import action
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 from crypto.qr import encrypt_payload, qr_png_bytes, decrypt_payload, decrypt_to_guest
@@ -239,4 +240,19 @@ class GuestFirebaseViewSet(viewsets.ViewSet):
         resp = HttpResponse(png, content_type="image/png")
         resp["Content-Disposition"] = f'inline; filename="{filename}"'
         return resp
+    
+    @action(detail=True, methods=["patch"], url_path="assign-seat")
+    def assign_seat(self, request, event_id=None, pk=None):
+        element_id = (request.data.get("element_id") or "").strip()
+        if not element_id:
+            return Response({"detail": "element_id required"}, status=400)
+        try:
+            result = assign_guest_to_element(event_id, pk, element_id, actor=request.user)
+            return Response({"ok": True, "element": result})
+        except LookupError as e:
+            return Response({"detail": str(e)}, status=404)
+        except ValueError as e:
+            # element_full / guest_already_seated_elsewhere
+            return Response({"detail": str(e)}, status=409)
+
     
