@@ -24,22 +24,18 @@ def _format_dt(ts, tz=None):
         """Format Firestore Timestamp or ISO/datetime to 'DD Mon YYYY' and 'H:MM AM/PM'."""
         if not ts:
             return "", ""
-        # Firestore Timestamp has .to_datetime()
         if hasattr(ts, "to_datetime"):
             dt = ts.to_datetime()
         else:
             if isinstance(ts, str):
                 try:
-                    # you imported `datetime` (class) above
                     dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                 except Exception:
                     # fallback: leave date as-is, no time
                     return str(ts), ""
             else:
                 dt = ts
-        # NOTE: if you store a timezone string, localize here
         date_s = dt.strftime("%d %b %Y")
-        # %-I works on Unix; on Windows use %#I. If you need portability, use two branches.
         time_s = dt.strftime("%-I:%M %p") if hasattr(dt, "strftime") else ""
         return date_s, time_s
 
@@ -166,12 +162,24 @@ class GuestFirebaseViewSet(viewsets.ViewSet):
         return Response({"items": items, "nextPageToken": next_token})
 
     def create(self, request, event_id=None):
-        data = {**request.data, "eventId": event_id}   
-        data.pop("seat", None)                          
+        element_id = (request.data.get("element_id") or "").strip()
+        data = {**request.data, "eventId": event_id}
+        data.pop("seat", None)
+        data.pop("element_id", None)
         ser = GuestSerializer(data=data)
         ser.is_valid(raise_exception=True)
-        gid = upsert_guest(event_id, ser.validated_data)
-        return Response({"id": gid}, status=201)
+        gid = upsert_guest(event_id, ser.validated_data, actor=request.user)
+
+        if not element_id:
+            return Response({"id": gid}, status=201)
+
+        try:
+            result = assign_guest_to_element(event_id, gid, element_id, actor=request.user)
+            return Response({"id": gid, "element": result}, status=201)
+        except ValueError as e:
+            #element full
+            delete_guest(event_id, gid, actor=request.user)
+            return Response({"detail": str(e)}, status=409)
 
     def partial_update(self, request, pk=None, event_id=None):
         data = {**request.data}
