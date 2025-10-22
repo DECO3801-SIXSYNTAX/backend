@@ -263,3 +263,95 @@ def resolve_guest_email_from_event(event: Dict[str, Any], guest_id: str) -> Opti
                     if email:
                         return email
     return None
+
+
+def _elements_col(db, event_id: str):
+    #ngambil elemen di dalem flooerplan
+    return (
+        db.collection(COLL).document(event_id)
+          .collection("floorplan").document("metadata")
+          .collection("elements")
+    )
+
+def _element_ref(db, event_id: str, element_id: str):
+    return _elements_col(db, event_id).document(element_id)
+
+def _guest_ref(db, event_id: str, guest_id: str):
+    return db.collection(COLL).document(event_id).collection("guests").document(guest_id)
+
+def _element_display_name(elem: dict, element_id: str) -> str:
+    return (
+        (elem.get("name") or "").strip()
+        or (elem.get("label") or "").strip()
+        or ((elem.get("config") or {}).get("label") or "").strip()
+        or element_id
+    )
+
+def assign_guest_to_element(event_id: str, guest_id: str, element_id: str, *, actor=None) -> dict:
+    db = get_db()
+    elem_ref  = _element_ref(db, event_id, element_id)
+    guest_ref = _guest_ref(db, event_id, guest_id)
+
+    # cek target elem ada apa engga
+    elem_snap = elem_ref.get()
+    if not elem_snap.exists:
+        raise LookupError("element_not_found")
+
+    elem = elem_snap.to_dict() or {}
+    assigned = list(elem.get("assignedGuests", []))
+    capacity = int(elem.get("capacity") or 0)
+    display_name = _element_display_name(elem, element_id)
+
+    # cek target guest ada apa engga
+    guest_snap = guest_ref.get()
+    if not guest_snap.exists:
+        raise LookupError("guest_not_found")
+    guest_doc = guest_snap.to_dict() or {}
+    current_seat = (guest_doc.get("seat") or "").strip()
+
+    # ini ngecek idempoten assignment
+    if guest_id in assigned and current_seat == element_id:
+        guest_ref.update({
+            "seat": element_id,
+            "seat_name": display_name,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+        return {"element_id": element_id, "element_name": display_name}
+
+    # kalo guest udah punya seat tp dipindahin, cek kapasitas target elem
+    if (guest_id not in assigned) and capacity and len(assigned) >= capacity:
+        raise ValueError("element_full")
+
+    # kalo guest udah punya seat tp dipindahin, remove dari seat lama
+    if current_seat and current_seat != element_id:
+        prev_ref = _element_ref(db, event_id, current_seat)
+        prev_snap = prev_ref.get()
+        if prev_snap.exists:
+            prev_ref.update({
+                "assignedGuests": firestore.ArrayRemove([guest_id]),
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            })
+
+    # tambahin guest ke element
+    elem_ref.update({
+        "assignedGuests": firestore.ArrayUnion([guest_id]),
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+
+    # tambahin elem ke guest
+    guest_ref.update({
+        "seat": element_id,
+        "seat_name": display_name,   
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+
+    log_activity(
+        action="guest.seat.assign",  
+        entity_type="guest",
+        entity_id=str(guest_id),
+        event_id=str(event_id),
+        actor_id=str(getattr(actor, "id", None)),
+        actor_email=getattr(actor, "email", None),
+    )
+    return {"element_id": element_id, "element_name": display_name}
+
