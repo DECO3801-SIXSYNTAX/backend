@@ -16,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
+
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -31,6 +32,7 @@ from .serializers import (
     PasswordResetSerializer,
     PasswordResetConfirmSerializer,
     GoogleAuthSerializer,
+    EmailOrUsernameLoginSerializer,   # <- bridge email/username
 )
 
 User = get_user_model()
@@ -49,6 +51,7 @@ def register(request):
 
 
 class _LoginSerializer(TokenObtainPairSerializer):
+    """Extend JWT serializer to inject custom claims + return user in response."""
     @classmethod
     def get_token(cls, user):
         t = super().get_token(user)
@@ -57,25 +60,41 @@ class _LoginSerializer(TokenObtainPairSerializer):
         t["company"] = getattr(user, "company", None)
         return t
 
-    def validate(self, attrs):
-        # DRF SimpleJWT sudah otomatis menolak user.is_active=False (no active account)
-        data = super().validate(attrs)
-        data["user"] = UserSerializer(self.user).data
-        return data
-
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login(request):
-    ser = _LoginSerializer(data=request.data, context={"request": request})
-    ser.is_valid(raise_exception=True)
-    return Response(ser.validated_data, status=200)
+    """
+    Body bisa:
+      { "email": "...", "password": "..." }  ATAU  { "username": "...", "password": "..." }
+    Bridge akan resolve email -> username untuk SimpleJWT.
+    """
+    # 1) Normalisasi kredensial (email/username) dengan bridge
+    bridge = EmailOrUsernameLoginSerializer(data=request.data)
+    bridge.is_valid(raise_exception=True)
+    creds = bridge.validated_data   # -> { "username": "...", "password": "..." }
+
+    # 2) Minta token ke SimpleJWT
+    jwt_ser = _LoginSerializer(data=creds, context={"request": request})
+    jwt_ser.is_valid(raise_exception=True)
+
+    # 3) Sertakan data user di response
+    try:
+        user = User.objects.get(username=creds["username"])
+        data = dict(jwt_ser.validated_data)
+        data["user"] = UserSerializer(user).data
+        return Response(data, status=200)
+    except User.DoesNotExist:
+        # Seharusnya tidak terjadi jika kredensial valid, tapi fallback aman
+        return Response({"detail": "No active account found with the given credentials"}, status=401)
 
 
 @api_view(["POST"])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def logout(request):
+    # Jika pakai stateless JWT, "logout" cukup di FE buang token;
+    # endpoint ini disediakan agar FE punya satu flow konsisten.
     return Response({"detail": "Logged out"}, status=200)
 
 
@@ -128,13 +147,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
             return qs.order_by("first_name", "last_name", "email")
 
-        if self.action == "retrieve":
-            if getattr(self.request.user, "role", "") != "admin":
-                return qs.filter(id=self.request.user.id)
-            admin_company = (getattr(self.request.user, "company", "") or "").strip().upper()
-            return qs.filter(company__iexact=admin_company)
-
-        return qs
+    def retrieve(self, request, *args, **kwargs):
+        # Non-admin hanya boleh ambil dirinya sendiri
+        if getattr(self.request.user, "role", "") != "admin":
+            self.kwargs["pk"] = str(self.request.user.id)
+        return super().retrieve(request, *args, **kwargs)
 
     # ---------- helpers ----------
     def _enforce_same_company(self, target_user):
@@ -166,7 +183,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save(update_fields=["is_active"])
         return Response({"detail": "User activated", "status": "active"})
 
-    # (opsional) create & update kamu tetap pakai yang sederhana
+    # (opsional) create & update sederhana (admin panel/API internal)
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -188,7 +205,6 @@ class UserViewSet(viewsets.ModelViewSet):
         user = User(**user_data)
         if password:
             user.set_password(password)
-        # default aktif
         if user.is_active is None:
             user.is_active = True
         user.save()
@@ -224,7 +240,7 @@ def password_reset(request):
     email = serializer.validated_data["email"]
 
     try:
-        user = User.objects.get(email=email)
+        user = User.objects.get(email__iexact=email)
         token = token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         reset_link = f"http://localhost:3000/reset-password/{uid}/{token}"
@@ -251,6 +267,7 @@ SiPanit Team
             fail_silently=True,
         )
     except User.DoesNotExist:
+        # Always return 200 to avoid user enumeration
         pass
 
     return Response(
@@ -295,13 +312,12 @@ class GoogleLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        # Debug: log request details
-        import json
-        print(f"\n=== Google Auth Request ===")
+        # Debug (aman di dev)
+        print("\n=== Google Auth Request ===")
         print(f"Data keys: {list(request.data.keys())}")
         print(f"Has id_token: {'id_token' in request.data}")
         print(f"Role: {request.data.get('role')}")
-        print(f"========================\n")
+        print("========================\n")
 
         serializer = GoogleAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -329,14 +345,12 @@ class GoogleLoginView(APIView):
         first = full_name.split(" ")[0] if full_name else ""
         last = " ".join(full_name.split(" ")[1:]) if " " in full_name else ""
 
-        # For Google OAuth, use username=email as the unique identifier
-        # This prevents matching regular users who have the same email but different username
+        # Gunakan username=email supaya unik terhadap user lokal lain
         user, created = User.objects.get_or_create(
-            username=email,  # Changed from email=email to username=email
+            username=email,
             defaults={"email": email, "first_name": first, "last_name": last},
         )
 
-        # BLOCK: suspended users cannot log in via Google
         if not user.is_active:
             return Response({"detail": "Account is suspended."}, status=status.HTTP_403_FORBIDDEN)
 

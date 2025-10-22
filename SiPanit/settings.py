@@ -13,7 +13,21 @@ QR_ENCRYPTION_KEY = os.getenv("QR_ENCRYPTION_KEY")
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
 DEBUG = os.getenv('DEBUG', '1') == '1'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
+#ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost', 'ping-rheumy-benedict.ngrok-free.dev').split(',')
+#CSRF_TRUSTED_ORIGINS = ["https://ping-rheumy-benedict.ngrok-free.dev"]
+
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+
+# 2) (opsional) tambahkan host ngrok statis / dari ENV
+NGROK_HOST = os.getenv("NGROK_HOST", "ping-rheumy-benedict.ngrok-free.dev")
+if NGROK_HOST and NGROK_HOST not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(NGROK_HOST)
+
+# 3) CSRF trusted origins untuk domain non-local
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{h.strip()}" for h in ALLOWED_HOSTS
+    if h and h.strip() not in ("127.0.0.1", "localhost")
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -28,11 +42,11 @@ INSTALLED_APPS = [
     'events',
     'adminapi',
     'anymail',
-    'authentication',
+    #'authentication',
     'event',
     'vendor',  # Add this
+    "authentication.apps.AuthenticationConfig",
 
-    
 ]
 
 MIDDLEWARE = [
