@@ -86,7 +86,12 @@ def bulk_send_invites(request, event_id: str):
         return Response({"detail": "Event not found"}, status=404)
 
     items, _ = list_guests(event_id=event_id, limit=5000)
-    targets = [(str(g.get("id")), g) for g in items]
+
+    # Filter guests if specific IDs were provided
+    if guest_ids:
+        targets = [(str(g.get("id")), g) for g in items if str(g.get("id")) in guest_ids]
+    else:
+        targets = [(str(g.get("id")), g) for g in items]
 
     event_name = event.get("name") or event.get("title") or "Your Event"
     starts_at  = event.get("startsAt")
@@ -103,7 +108,10 @@ def bulk_send_invites(request, event_id: str):
                 skipped.append({"guestId": gid, "reason": "not_found"})
                 continue
 
-            email = resolve_guest_email_from_event(event, gid) or (guest.get("email") or "").strip().lower()
+            # Try guest subcollection first, then event document
+            email = (guest.get("email") or "").strip().lower()
+            if not email:
+                email = resolve_guest_email_from_event(event, gid) or ""
             if not email:
                 skipped.append({"guestId": gid, "reason": "missing_email"})
                 continue
