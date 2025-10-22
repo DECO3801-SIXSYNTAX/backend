@@ -295,6 +295,14 @@ class GoogleLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        # Debug: log request details
+        import json
+        print(f"\n=== Google Auth Request ===")
+        print(f"Data keys: {list(request.data.keys())}")
+        print(f"Has id_token: {'id_token' in request.data}")
+        print(f"Role: {request.data.get('role')}")
+        print(f"========================\n")
+
         serializer = GoogleAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         id_token_str = serializer.validated_data["id_token"]
@@ -306,8 +314,12 @@ class GoogleLoginView(APIView):
                 google_requests.Request(),
                 settings.GOOGLE_CLIENT_ID,
             )
-        except ValueError:
+        except ValueError as e:
+            print(f"!!! Google token verification failed: {e}")
             return Response({"detail": "Invalid Google ID token."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            print(f"!!! Unexpected error during token verification: {e}")
+            return Response({"detail": f"Token verification error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
         if not idinfo.get("email_verified", False):
             return Response({"detail": "Google email is not verified."}, status=status.HTTP_400_BAD_REQUEST)
