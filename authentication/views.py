@@ -58,6 +58,17 @@ class _LoginSerializer(TokenObtainPairSerializer):
         return t
 
     def validate(self, attrs):
+        # Allow login with email or username
+        # If username looks like email, use it directly for authentication
+        username_or_email = attrs.get('username', '')
+        
+        # If it's an email format, pass it to authenticate as-is
+        if '@' in username_or_email:
+            print(f"🔑 Login attempt with email: {username_or_email}")
+            attrs['username'] = username_or_email
+        else:
+            print(f"🔑 Login attempt with username: {username_or_email}")
+        
         # DRF SimpleJWT sudah otomatis menolak user.is_active=False (no active account)
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data

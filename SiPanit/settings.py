@@ -111,6 +111,12 @@ REST_FRAMEWORK = {
 
 AUTH_USER_MODEL = "authentication.User"
 
+# Authentication backends (order matters!)
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # Default Django auth
+    'authentication.backends.FirebaseFallbackBackend',  # Fallback to Firebase
+]
+
 from datetime import timedelta
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
