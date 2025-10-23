@@ -6,6 +6,7 @@ from django.template.loader import render_to_string
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.utils.text import slugify
+from typing import Optional
 
 from crypto.qr import encrypt_payload, qr_png_bytes
 
@@ -125,7 +126,7 @@ def send_guest_qr_email(
     venue_address: str = "",
     org_name: str = "Event Team",
     org_reply_email: str = "no-reply@example.com",
-    from_email: str | None = None,
+    from_email: Optional[str] = None,
 ) -> None:
     """
     Sends an invitation email with inline + attached QR PNG.
