@@ -1,5 +1,15 @@
 from django.urls import path
-from .views import GuestFirebaseViewSet, debug_decode_guest, bulk_send_invites
+from .views import (
+    GuestFirebaseViewSet,
+    debug_decode_guest,
+    bulk_send_invites,
+    verify_guest_qr,
+    checkin_guest,
+    checkout_guest,
+    get_checkin_stats,
+    get_guest_checkin_status,
+)
+from . import views
 
 guest_list_create = GuestFirebaseViewSet.as_view({"get": "list", "post": "create"})
 guest_detail      = GuestFirebaseViewSet.as_view({"patch": "partial_update", "delete": "destroy"})
@@ -19,5 +29,10 @@ urlpatterns = [
     path("<str:event_id>/",guest_list_create, name="guest-list-create"),
     path("<str:event_id>/<str:guest_id>/send-invite/", send_invite, name="guest-send-invite"),
     #path("<str:event_id>/toggle-checkin/",guest_toggle_ci, name="guest-toggle-checkin"),
+    path('verify-qr/', views.verify_guest_qr, name='verify_guest_qr'),
+    path('checkin/', views.checkin_guest, name='checkin_guest'),
+    path('checkout/', views.checkout_guest, name='checkout_guest'),
+    path('checkin-stats/<str:event_id>/', views.get_checkin_stats, name='get_checkin_stats'),
+    path('checkin-status/<str:event_id>/<str:guest_id>/', views.get_guest_checkin_status, name='get_guest_checkin_status'),
     
 ]

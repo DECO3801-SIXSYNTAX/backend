@@ -49,6 +49,7 @@ urlpatterns = [
 
     path("api/event/", include("event.urls")),
     path("api/admin/", include("adminapi.urls")),
+    path("api/guest/", include("guest.urls")),  # Consistent plural form
     path("api/guests/", include("guest.urls")),  # Consistent plural form
     path("api/vendor/", include("vendor.urls")),
 ]   

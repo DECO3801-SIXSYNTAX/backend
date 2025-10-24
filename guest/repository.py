@@ -236,13 +236,93 @@ def get_guest(event_id: str, guest_id: str) -> dict | None:
     return None
 
 def get_event(event_id: str) -> Optional[Dict[str, Any]]:
-    db = get_db()
-    doc = db.collection(COLL).document(event_id).get()
-    if not doc.exists:
-        return None
-    data = doc.to_dict() or {}
-    data["id"] = doc.id
-    return data
+    print(f"  🔍 get_event() called with event_id: {event_id}")
+    try:
+        db = get_db()
+        print(f"  ✅ Firestore DB connected")
+        
+        print(f"  🔍 Fetching document from collection: {COLL}, document: {event_id}")
+        doc = db.collection(COLL).document(event_id).get()
+        
+        print(f"  ✅ Document fetched, exists: {doc.exists}")
+        
+        if not doc.exists:
+            print(f"  ❌ Document does not exist")
+            return None
+            
+        data = doc.to_dict() or {}
+        data["id"] = doc.id
+        print(f"  ✅ Event data retrieved: {data.get('name', 'N/A')}")
+        return data
+        
+    except Exception as e:
+        print(f"  ❌ Error in get_event(): {e}")
+        import traceback
+        traceback.print_exc()
+        return None  # Return None instead of raising    print(f"  🔍 get_event() called with event_id: {event_id}")
+    try:
+        db = get_db()
+        print(f"  ✅ Firestore DB connected")
+        
+        print(f"  🔍 Fetching document from collection: {COLL}, document: {event_id}")
+        
+        # Add timeout to prevent hanging
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Firestore query timed out after 10 seconds")
+        
+        # Set 10 second timeout (only works on Unix/Mac)
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(10)
+        
+        try:
+            doc = db.collection(COLL).document(event_id).get()
+            signal.alarm(0)  # Cancel timeout
+        except TimeoutError as e:
+            print(f"  ❌ Timeout: {e}")
+            raise
+        
+        print(f"  ✅ Document fetched, exists: {doc.exists}")
+        
+        if not doc.exists:
+            print(f"  ❌ Document does not exist")
+            return None
+            
+        data = doc.to_dict() or {}
+        data["id"] = doc.id
+        print(f"  ✅ Event data retrieved: {data.get('name', 'N/A')}")
+        return data
+        
+    except Exception as e:
+        print(f"  ❌ Error in get_event(): {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    print(f"  🔍 get_event() called with event_id: {event_id}")
+    try:
+        db = get_db()
+        print(f"  ✅ Firestore DB connected")
+        
+        print(f"  🔍 Fetching document from collection: {COLL}, document: {event_id}")
+        doc = db.collection(COLL).document(event_id).get()
+        
+        print(f"  ✅ Document fetched, exists: {doc.exists}")
+        
+        if not doc.exists:
+            print(f"  ❌ Document does not exist")
+            return None
+            
+        data = doc.to_dict() or {}
+        data["id"] = doc.id
+        print(f"  ✅ Event data retrieved: {data.get('name', 'N/A')}")
+        return data
+        
+    except Exception as e:
+        print(f"  ❌ Error in get_event(): {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 def resolve_guest_email_from_event(event: Dict[str, Any], guest_id: str) -> Optional[str]:
     gid = str(guest_id)
