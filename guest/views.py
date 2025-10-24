@@ -84,6 +84,8 @@ def debug_decode_guest(request):
         if already_checked:
             msg = "Guest already check-in."
 
+            return Response({"detail": msg, "payload": payload}, status=409)
+
         # 4) Kalau belum → set True + timestamp
         patch = {"checkedIn": True}
         updated_guest = partial_update_guest(event, guest, patch)
