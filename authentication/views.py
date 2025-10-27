@@ -1,3 +1,4 @@
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.models import Group
@@ -119,7 +120,7 @@ class UserViewSet(viewsets.ModelViewSet):
             roles_param = self.request.query_params.get("role")
             roles = [r.strip() for r in roles_param.split(",")] if roles_param else ["admin", "planner"]
 
-            qs = qs.filter(company__iexact=admin_company, role__in=roles)
+            qs = qs.filter(company_iexact=admin_company, role_in=roles)
 
             # filter status (?status=active|suspended)
             status_param = (self.request.query_params.get("status") or "").lower()
@@ -231,17 +232,25 @@ def password_reset(request):
     serializer = PasswordResetSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    email = serializer.validated_data["email"]
+    email = serializer.validated_data["email"]  # sudah dilowercase di serializer
 
     try:
-        user = User.objects.get(email=email)
-        token = token_generator.make_token(user)
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        reset_link = f"http://localhost:3000/reset-password/{uid}/{token}"
+        # gunakan iexact agar tidak sensitif kapital
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        # Tetap balas 200, tapi catat log agar kamu tahu tidak ada pengiriman
+        print(f"[RESET] No user with email: {email} (no email sent)")
+        return Response(
+            {"detail": "If this email is registered, you will receive a password reset link shortly."},
+            status=status.HTTP_200_OK,
+        )
 
-        subject = "Password Reset Request"
-        message = f"""
-Hello {user.first_name or user.username},
+    token = token_generator.make_token(user)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    reset_link = f"http://localhost:3000/reset-password/{uid}/{token}"
+
+    subject = "Password Reset Request"
+    message = f"""Hello {user.first_name or user.username},
 
 You have requested a password reset for your account.
 
@@ -253,21 +262,24 @@ If you did not request this password reset, please ignore this email.
 Best regards,
 SiPanit Team
 """
-        send_mail(
+
+    # Send password reset email
+    try:
+        sent = send_mail(
             subject=subject,
             message=message,
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@sipanit.com"),
             recipient_list=[email],
-            fail_silently=True,
+            fail_silently=False,  # <— penting saat debug
         )
-    except User.DoesNotExist:
-        pass
+        print(f"[RESET] send_mail returned: {sent} to {email}")
+    except Exception as e:
+        print(f"[RESET][ERROR] Failed to send to {email}: {e}")
 
     return Response(
         {"detail": "If this email is registered, you will receive a password reset link shortly."},
         status=status.HTTP_200_OK,
     )
-
 
 @api_view(["POST"])
 @permission_classes([AllowAny])

@@ -136,6 +136,7 @@ def debug_decode_guest(request):
         return Response({"detail": str(e)}, status=404)
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated, IsPlanner])
 def bulk_send_invites(request, event_id: str):
     base_url = request.data.get("baseUrl") or "https://app.example.com"
     guest_ids: Optional[List[str]] = request.data.get("guestIds") or None
