@@ -10,7 +10,7 @@ class User(AbstractUser):
         GUEST = "guest", "Guest"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    firebase_uid = models.CharField(max_length=128, unique=True, blank=True, null=True)
+    firebase_uid = models.CharField(max_length=128, unique=True, db_index=True, blank=True, null=True)
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.GUEST)
 
     # Planner-specific fields (optional, only used when role='planner')
