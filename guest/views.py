@@ -148,10 +148,15 @@ def bulk_send_invites(request, event_id: str):
         return Response({"detail": "Event not found"}, status=404)
 
     
-    
-    # No guestIds provided -> send to ALL guests in the event (up to limit)
+
+    # Fetch all guests from the event
     items, _ = list_guests(event_id=event_id, limit=5000)
-    targets = [(str(g.get("id")), g) for g in items]
+
+    # Filter by guestIds if provided, otherwise send to ALL guests
+    if guest_ids:
+        targets = [(str(g.get("id")), g) for g in items if str(g.get("id")) in guest_ids]
+    else:
+        targets = [(str(g.get("id")), g) for g in items]
 
     
     event_name = event.get("name") or event.get("title") or "Your Event"

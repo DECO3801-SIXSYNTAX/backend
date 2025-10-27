@@ -25,9 +25,9 @@ User = get_user_model()
 # Initialize Firebase (safe to call multiple times)
 try:
     init_firebase()
-    print("✓ Firebase initialized successfully for authentication")
+    print("[OK] Firebase initialized successfully for authentication")
 except Exception as e:
-    print(f"⚠️ Firebase initialization: {e}")
+    print(f"[WARNING] Firebase initialization: {e}")
 
 
 class FirebaseAuthentication(authentication.BaseAuthentication):
@@ -81,19 +81,25 @@ class FirebaseAuthentication(authentication.BaseAuthentication):
             if not email:
                 raise exceptions.AuthenticationFailed('Email not found in Firebase token')
             
-            print(f"✓ Firebase token verified for: {email}")
+            print(f"[OK] Firebase token verified for: {email}")
             
             # Get or create Django user using Firebase UID
             # This ensures Firebase UID matches Django user ID for event ownership
             try:
-                # Try to get user by email first
-                user = User.objects.get(email=email)
+                # Try to get user by firebase_uid first, then email
+                user = User.objects.filter(firebase_uid=uid).first()
+                if not user:
+                    user = User.objects.get(email=email)
+                    # Update firebase_uid if user exists but doesn't have it set
+                    if not user.firebase_uid:
+                        user.firebase_uid = uid
+                        user.save()
                 created = False
-                print(f"✓ Found existing Django user: {email}")
+                print(f"[OK] Found existing Django user: {email}")
             except User.DoesNotExist:
-                # Create new user with Firebase UID as primary key
+                # Create new user with Firebase UID stored in firebase_uid field
                 user = User.objects.create(
-                    id=uid,  # Use Firebase UID as Django user ID
+                    firebase_uid=uid,  # Store Firebase UID in separate field
                     username=email.split('@')[0],
                     email=email,
                     first_name=name.split(' ')[0] if name else email.split('@')[0],
@@ -105,30 +111,30 @@ class FirebaseAuthentication(authentication.BaseAuthentication):
                 user.set_unusable_password()
                 user.save()
                 created = True
-                print(f"✓ Created new Django user with Firebase UID: {email} (ID: {uid})")
+                print(f"[OK] Created new Django user with Firebase UID: {email} (Firebase UID: {uid})")
             
             if created:
-                print(f"✓ Auto-created Django user from Firebase: {email}")
+                print(f"[OK] Auto-created Django user from Firebase: {email}")
             else:
-                print(f"✓ Found existing Django user: {email}")
+                print(f"[OK] Found existing Django user: {email}")
             
             # Return user for authentication
             return (user, None)
             
         except firebase_auth.InvalidIdTokenError as e:
-            print(f"✗ Invalid Firebase token: {e}")
+            print(f"[ERROR] Invalid Firebase token: {e}")
             raise exceptions.AuthenticationFailed(f'Invalid Firebase token: {str(e)}')
             
         except firebase_auth.ExpiredIdTokenError:
-            print(f"✗ Firebase token expired")
+            print(f"[ERROR] Firebase token expired")
             raise exceptions.AuthenticationFailed('Firebase token has expired')
             
         except firebase_auth.RevokedIdTokenError:
-            print(f"✗ Firebase token revoked")
+            print(f"[ERROR] Firebase token revoked")
             raise exceptions.AuthenticationFailed('Firebase token has been revoked')
             
         except Exception as e:
-            print(f"✗ Firebase authentication error: {e}")
+            print(f"[ERROR] Firebase authentication error: {e}")
             import traceback
             traceback.print_exc()
             raise exceptions.AuthenticationFailed(f'Authentication failed: {str(e)}')
